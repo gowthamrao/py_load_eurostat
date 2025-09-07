@@ -1,0 +1,78 @@
+[project]
+name = "eurostat-loader"
+version = "1.0.0"
+description = "An ELT pipeline for ingesting Eurostat data into relational databases."
+authors = [
+    { name = "Gowtham Rao", email = "rao@ohdsi.org" },
+    { name = "Jules", email = "jules@example.com" },
+]
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "httpx",
+    "pandas",
+    "pysdmx",
+    "psycopg>=3.1",
+    "pydantic",
+    "pydantic-settings",
+    "tenacity", # For retry mechanisms
+    "structlog", # For structured logging
+    "typer[all]", # For the command-line interface
+]
+
+[project.scripts]
+eurostat-loader = "eurostat_loader.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/example/eurostat-loader"
+Repository = "https://github.com/example/eurostat-loader"
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "testcontainers",
+    "ruff",
+    "mypy",
+    "pytest-mock",
+]
+
+[build-system]
+requires = ["pdm-pep517"]
+build-backend = "pdm.pep517.api"
+
+[tool.pdm]
+package-dir = "src"
+
+[tool.ruff]
+# Enable Pyflakes, Pycodestyle, and isort rules.
+select = ["E", "F", "I"]
+line-length = 88
+target-version = "py310"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true # Initially true, can be hardened later
+disallow_untyped_defs = true
+check_untyped_defs = true
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --cov=src/eurostat_loader --cov-report=term-missing"
+testpaths = [
+    "tests",
+]

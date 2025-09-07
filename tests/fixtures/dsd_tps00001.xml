@@ -1,0 +1,42 @@
+<Structure xmlns="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/message">
+  <Header>
+    <ID>IDREF</ID>
+    <Test>true</Test>
+  </Header>
+  <Structures>
+    <Dataflows>
+      <Dataflow id="TPS00001" version="1.0" agencyID="ESTAT">
+        <Name xml:lang="en">Test Dataset</Name>
+        <Structure>
+          <Ref id="DSD_TPS00001" version="1.0" agencyID="ESTAT" package="datastructure" class="DataStructure"/>
+        </Structure>
+      </Dataflow>
+    </Dataflows>
+    <DataStructures>
+      <DataStructureDefinition id="DSD_TPS00001" version="1.0" agencyID="ESTAT">
+        <Name xml:lang="en">Test DSD</Name>
+        <DimensionList>
+          <Dimension id="GEO" position="1">
+            <Representation>
+              <Ref id="CL_GEO" version="1.0" agencyID="ESTAT" package="codelist" class="Codelist"/>
+            </Representation>
+          </Dimension>
+        </DimensionList>
+        <AttributeList>
+          <Attribute id="OBS_FLAG" assignmentStatus="Mandatory">
+            <Representation>
+              <Ref id="CL_OBS_FLAG" version="1.0" agencyID="ESTAT" package="codelist" class="Codelist"/>
+            </Representation>
+          </Attribute>
+        </AttributeList>
+        <MeasureList>
+          <PrimaryMeasure id="OBS_VALUE">
+            <Representation>
+              <TextFormat textType="Double"/>
+            </Representation>
+          </PrimaryMeasure>
+        </MeasureList>
+      </DataStructureDefinition>
+    </DataStructures>
+  </Structures>
+</Structure>
