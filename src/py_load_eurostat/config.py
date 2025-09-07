@@ -1,5 +1,5 @@
 """
-Configuration module for the eurostat-loader package.
+Configuration module for the py-load-eurostat package.
 
 This module uses pydantic-settings to manage application configuration,
 allowing settings to be loaded from environment variables or a .env file.
@@ -23,7 +23,7 @@ class DatabaseSettings(BaseSettings):
 class CacheSettings(BaseSettings):
     """Defines the configuration for the data caching mechanism."""
     path: Path = Field(
-        default_factory=lambda: Path.home() / ".cache" / "eurostat-loader",
+        default_factory=lambda: Path.home() / ".cache" / "py-load-eurostat",
         description="The filesystem path for storing cached downloads."
     )
     enabled: bool = Field(default=True, description="A flag to enable or disable caching.")

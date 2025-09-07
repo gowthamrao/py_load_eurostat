@@ -1,5 +1,5 @@
 """
-Command-line interface for the eurostat-loader application.
+Command-line interface for the py-load-eurostat application.
 
 This module uses Typer to create a CLI for running the ingestion pipeline.
 """
@@ -10,7 +10,7 @@ import typer
 
 # Create a Typer application
 app = typer.Typer(
-    name="eurostat-loader",
+    name="py-load-eurostat",
     help="A CLI tool to download, transform, and load Eurostat data into a database.",
     add_completion=False,
 )
