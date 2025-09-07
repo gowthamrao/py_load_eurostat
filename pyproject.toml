@@ -1,5 +1,5 @@
 [project]
-name = "eurostat-loader"
+name = "py_load_eurostat"
 version = "1.0.0"
 description = "An ELT pipeline for ingesting Eurostat data into relational databases."
 authors = [
@@ -33,11 +33,11 @@ dependencies = [
 ]
 
 [project.scripts]
-eurostat-loader = "eurostat_loader.cli:app"
+py-load-eurostat = "py_load_eurostat.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/example/eurostat-loader"
-Repository = "https://github.com/example/eurostat-loader"
+Homepage = "https://github.com/example/py_load_eurostat"
+Repository = "https://github.com/example/py_load_eurostat"
 
 [project.optional-dependencies]
 dev = [
@@ -72,7 +72,7 @@ check_untyped_defs = true
 
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "-ra -q --cov=src/eurostat_loader --cov-report=term-missing"
+addopts = "-ra -q --cov=src/py_load_eurostat --cov-report=term-missing"
 testpaths = [
     "tests",
 ]

@@ -1,8 +1,9 @@
 """
 Unit tests for the parser module.
 """
+import math
 from pathlib import Path
-from eurostat_loader.parser import SdmxParser, TsvParser
+from py_load_eurostat.parser import SdmxParser, TsvParser
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
@@ -48,4 +49,4 @@ def test_tsv_parser():
     assert rows[1]["geo"] == "DE"
     assert rows[1]["2022"] == "12.5 p"
     assert rows[2]["2021"] == "8.2"
-    assert rows[2]["2022"] == ":" # Check missing value representation
+    assert math.isnan(rows[2]["2022"]) # Check missing value representation

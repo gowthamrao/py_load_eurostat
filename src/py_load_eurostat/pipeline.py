@@ -7,7 +7,7 @@ loader) to execute the end-to-end data ingestion process.
 import logging
 from datetime import datetime
 
-from .config import get_settings
+from .config import settings
 from .fetcher import Fetcher
 from .loader.postgresql import PostgresLoader
 from .models import IngestionHistory, IngestionStatus
@@ -26,7 +26,6 @@ def run_pipeline(dataset_id: str, representation: str, load_strategy: str):
         load_strategy: The load strategy ('Full' or 'Delta').
     """
     loader = None
-    settings = get_settings() # Get settings here, only when pipeline runs
 
     history_record = IngestionHistory(
         dataset_id=dataset_id,

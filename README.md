@@ -1,6 +1,6 @@
-# Eurostat Loader
+# Py Load Eurostat
 
-`eurostat-loader` is a high-performance, extensible Python package for downloading, transforming, and bulk-loading statistical data from Eurostat into a relational database. It is designed to handle very large datasets efficiently by leveraging native database bulk-loading capabilities.
+`py-load-eurostat` is a high-performance, extensible Python package for downloading, transforming, and bulk-loading statistical data from Eurostat into a relational database. It is designed to handle very large datasets efficiently by leveraging native database bulk-loading capabilities.
 
 This project was built based on the detailed Functional Requirements Document (FRD) provided.
 
@@ -17,8 +17,8 @@ This project was built based on the detailed Functional Requirements Document (F
 
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/example/eurostat-loader.git
-    cd eurostat-loader
+    git clone https://github.com/example/py-load-eurostat.git
+    cd py-load-eurostat
     ```
 
 2.  Install the package. It is recommended to do this in a virtual environment.
@@ -32,21 +32,21 @@ The application is configured entirely through environment variables. The follow
 
 | Environment Variable             | Description                                  | Default       |
 | -------------------------------- | -------------------------------------------- | ------------- |
-| `EUROSTAT_LOADER_DB__HOST`       | The hostname of the database server.         | `localhost`   |
-| `EUROSTAT_LOADER_DB__PORT`       | The port of the database server.             | `5432`        |
-| `EUROSTAT_LOADER_DB__USER`       | The username for the database connection.    | `postgres`    |
-| `EUROSTAT_LOADER_DB__PASSWORD`   | The password for the database connection.    | **Required**  |
-| `EUROSTAT_LOADER_DB__NAME`       | The name of the database to connect to.      | `eurostat`    |
-| `EUROSTAT_LOADER_CACHE__PATH`    | Filesystem path for caching downloads.       | `~/.cache/eurostat-loader` |
-| `EUROSTAT_LOADER_CACHE__ENABLED` | Set to `false` to disable caching.           | `true`        |
-| `EUROSTAT_LOADER_LOG__LEVEL`     | The logging level (e.g., `INFO`, `DEBUG`).   | `INFO`        |
+| `PY_LOAD_EUROSTAT_DB__HOST`       | The hostname of the database server.         | `localhost`   |
+| `PY_LOAD_EUROSTAT_DB__PORT`       | The port of the database server.             | `5432`        |
+| `PY_LOAD_EUROSTAT_DB__USER`       | The username for the database connection.    | `postgres`    |
+| `PY_LOAD_EUROSTAT_DB__PASSWORD`   | The password for the database connection.    | **Required**  |
+| `PY_LOAD_EUROSTAT_DB__NAME`       | The name of the database to connect to.      | `eurostat`    |
+| `PY_LOAD_EUROSTAT_CACHE__PATH`    | Filesystem path for caching downloads.       | `~/.cache/py-load-eurostat` |
+| `PY_LOAD_EUROSTAT_CACHE__ENABLED` | Set to `false` to disable caching.           | `true`        |
+| `PY_LOAD_EUROSTAT_LOG__LEVEL`     | The logging level (e.g., `INFO`, `DEBUG`).   | `INFO`        |
 
 ## Usage
 
 The primary way to use the loader is via its command-line interface.
 
 ```bash
-eurostat-loader run [OPTIONS]
+py-load-eurostat run [OPTIONS]
 ```
 
 **Example:**
@@ -54,9 +54,9 @@ eurostat-loader run [OPTIONS]
 To perform a full load of the `nama_10_gdp` dataset, replacing any existing data:
 
 ```bash
-export EUROSTAT_LOADER_DB__PASSWORD="your_secret_password"
+export PY_LOAD_EUROSTAT_DB__PASSWORD="your_secret_password"
 
-eurostat-loader run --dataset-id "nama_10_gdp"
+py-load-eurostat run --dataset-id "nama_10_gdp"
 ```
 
 ### CLI Options
@@ -78,9 +78,9 @@ The application follows a classic, decoupled ETL pipeline design:
 
 The system is designed to be easily extended with new database adapters.
 
-1.  **Create a New Loader Class:** Create a new file in `src/eurostat_loader/loader/` (e.g., `snowflake.py`). In this file, define a new class (e.g., `SnowflakeLoader`).
+1.  **Create a New Loader Class:** Create a new file in `src/py_load_eurostat/loader/` (e.g., `snowflake.py`). In this file, define a new class (e.g., `SnowflakeLoader`).
 
-2.  **Implement the Interface:** Your new class must inherit from `LoaderInterface` (from `src.eurostat_loader.loader.base`) and implement all its abstract methods:
+2.  **Implement the Interface:** Your new class must inherit from `LoaderInterface` (from `src.py_load_eurostat.loader.base`) and implement all its abstract methods:
     *   `prepare_schema(...)`
     *   `manage_codelists(...)`
     *   `bulk_load_staging(...)`
@@ -93,7 +93,7 @@ The system is designed to be easily extended with new database adapters.
 
 4.  **Update the Pipeline:** In `pipeline.py`, you would add logic to select the desired loader based on a configuration setting.
 
-Refer to `src/eurostat_loader/loader/postgresql.py` for the canonical example of a `LoaderInterface` implementation.
+Refer to `src/py_load_eurostat/loader/postgresql.py` for the canonical example of a `LoaderInterface` implementation.
 
 ## Running Tests
 

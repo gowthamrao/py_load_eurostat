@@ -8,7 +8,7 @@ must adhere to.
 from abc import ABC, abstractmethod
 from typing import Dict, Generator, Optional
 
-from ..models import DSD, CodeList, Observation, IngestionHistory
+from ..models import DSD, Codelist, Observation, IngestionHistory
 
 class LoaderInterface(ABC):
     """
@@ -30,12 +30,12 @@ class LoaderInterface(ABC):
         pass
 
     @abstractmethod
-    def manage_codelists(self, codelists: Dict[str, CodeList], schema: str) -> None:
+    def manage_codelists(self, codelists: Dict[str, Codelist], schema: str) -> None:
         """
         Bulk loads or updates SDMX Code Lists into the database.
 
         Args:
-            codelists: A dictionary of CodeList objects to load.
+            codelists: A dictionary of Codelist objects to load.
             schema: The database schema for metadata tables.
         """
         pass
