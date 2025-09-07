@@ -35,7 +35,7 @@ def test_full_pipeline_run_happy_path(db_settings: DatabaseSettings, mocker):
         mocker.patch("py_load_eurostat.fetcher.Fetcher.get_dsd_xml", return_value=FIXTURES_DIR / "dsd_tps00001.xml")
         mocker.patch("py_load_eurostat.fetcher.Fetcher.get_codelist_xml", return_value=FIXTURES_DIR / "codelist_geo.xml")
         mocker.patch("py_load_eurostat.fetcher.Fetcher.get_dataset_tsv", return_value=FIXTURES_DIR / "tps00001.tsv.gz")
-        mocker.patch("py_load_eurostat.fetcher.Fetcher.get_toc_xml", return_value=FIXTURES_DIR / "sample_toc.xml")
+        mocker.patch("py_load_eurostat.fetcher.Fetcher.get_data_inventory", return_value=FIXTURES_DIR / "sample_inventory.csv")
         mocker.patch.object(settings, 'db', db_settings)
 
         # 2. Run the pipeline
@@ -72,7 +72,7 @@ def test_codelist_loading(db_settings: DatabaseSettings, mocker):
         mocker.patch("py_load_eurostat.fetcher.Fetcher.get_dsd_xml", return_value=FIXTURES_DIR / "dsd_tps00001.xml")
         mocker.patch("py_load_eurostat.fetcher.Fetcher.get_codelist_xml", return_value=FIXTURES_DIR / "codelist_geo.xml")
         mocker.patch("py_load_eurostat.fetcher.Fetcher.get_dataset_tsv", return_value=FIXTURES_DIR / "tps00001.tsv.gz")
-        mocker.patch("py_load_eurostat.fetcher.Fetcher.get_toc_xml", return_value=FIXTURES_DIR / "sample_toc.xml")
+        mocker.patch("py_load_eurostat.fetcher.Fetcher.get_data_inventory", return_value=FIXTURES_DIR / "sample_inventory.csv")
         mocker.patch.object(settings, 'db', db_settings)
 
         # 2. Run the pipeline
@@ -108,7 +108,7 @@ def test_delta_load_logic(db_settings: DatabaseSettings, mocker):
         mocker.patch("py_load_eurostat.fetcher.Fetcher.get_dsd_xml", return_value=FIXTURES_DIR / "dsd_tps00001.xml")
         mocker.patch("py_load_eurostat.fetcher.Fetcher.get_codelist_xml", return_value=FIXTURES_DIR / "codelist_geo.xml")
         mocker.patch("py_load_eurostat.fetcher.Fetcher.get_dataset_tsv", return_value=FIXTURES_DIR / "tps00001.tsv.gz")
-        mock_get_toc = mocker.patch("py_load_eurostat.fetcher.Fetcher.get_toc_xml", return_value=FIXTURES_DIR / "sample_toc.xml")
+        mock_get_inventory = mocker.patch("py_load_eurostat.fetcher.Fetcher.get_data_inventory", return_value=FIXTURES_DIR / "sample_inventory.csv")
         mocker.patch.object(settings, 'db', db_settings)
 
         # 2. Run initial full load
@@ -125,8 +125,8 @@ def test_delta_load_logic(db_settings: DatabaseSettings, mocker):
             assert records[0] == ("SUCCESS", 5)
             assert records[1] == ("SUCCESS", 0)
 
-        # 5. Mock the TOC to point to the NEWER file and run again
-        mock_get_toc.return_value = FIXTURES_DIR / "sample_toc_new.xml"
+        # 5. Mock the inventory to point to the NEWER file and run again
+        mock_get_inventory.return_value = FIXTURES_DIR / "sample_inventory_new.csv"
         run_pipeline(dataset_id=dataset_id, representation="Standard", load_strategy="Delta")
 
         # 6. Assert that the third run was executed

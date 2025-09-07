@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 # Base URL for the Eurostat SDMX 2.1 API
 EUROSTAT_SDMX_API_URL = "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1"
+# Base URL for the Eurostat Dissemination Files API (for bulk inventory)
+EUROSTAT_FILES_API_URL = "https://ec.europa.eu/eurostat/api/dissemination/files"
 
 class Fetcher:
     """
@@ -93,12 +95,13 @@ class Fetcher:
 
         return self._download_to_cache(url, cache_filename)
 
-    def get_toc_xml(self) -> Path:
+    def get_data_inventory(self) -> Path:
         """
-        Fetches the Table of Contents (TOC) as an SDMX dataflow listing.
+        Fetches the bulk data inventory, which lists all TSV datasets.
+        The response is a CSV file.
         """
-        url = f"{EUROSTAT_SDMX_API_URL}/dataflow/ESTAT/all/latest?detail=full"
-        return self._fetch(url, "toc.xml")
+        url = f"{EUROSTAT_FILES_API_URL}/inventory?type=data&format=csv"
+        return self._fetch(url, "inventory.csv")
 
     def get_dataset_tsv(self, dataset_id: str) -> Path:
         """

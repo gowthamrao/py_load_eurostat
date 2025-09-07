@@ -30,38 +30,26 @@ def test_sdmx_parser_codelist():
     assert "DE" in codelist.codes
     assert codelist.codes["DE"].name == "Germany"
 
-def test_toc_parser_success():
-    """Tests that TOCParser correctly finds a dataset and its update time."""
-    from py_load_eurostat.parser import TOCParser
+def test_inventory_parser():
+    """
+    Tests that the InventoryParser correctly finds a dataset and its update time.
+    """
+    from py_load_eurostat.parser import InventoryParser
     from datetime import datetime, timezone
 
-    parser = TOCParser()
-    toc_path = FIXTURES_DIR / "sample_toc.xml"
+    inventory_path = FIXTURES_DIR / "sample_inventory.csv"
+    parser = InventoryParser(inventory_path)
 
-    # Test finding an existing dataset
-    update_time = parser.get_last_update_timestamp(toc_path, "DSET_TWO")
+    # 1. Test finding an existing dataset
+    update_time = parser.get_last_update_timestamp("tps00001")
     assert update_time is not None
-    assert update_time == datetime(2024, 3, 15, 0, 0, tzinfo=timezone.utc)
+    assert update_time == datetime(2023, 10, 26, 10, 0, 0, tzinfo=timezone.utc)
 
-def test_toc_parser_not_found():
-    """Tests that TOCParser returns None for a non-existent dataset."""
-    from py_load_eurostat.parser import TOCParser
-
-    parser = TOCParser()
-    toc_path = FIXTURES_DIR / "sample_toc.xml"
-
-    # Test for a dataset that is not in the file
-    update_time = parser.get_last_update_timestamp(toc_path, "DSET_NONEXISTENT")
+    # 2. Test for a dataset that is not in the file
+    update_time = parser.get_last_update_timestamp("non_existent_dataset")
     assert update_time is None
 
-def test_toc_parser_malformed_file(tmp_path, caplog):
-    """Tests that TOCParser handles a malformed XML file gracefully."""
-    from py_load_eurostat.parser import TOCParser
-
-    parser = TOCParser()
-    malformed_path = tmp_path / "malformed.xml"
-    malformed_path.write_text("<xml><unclosed>")
-
-    update_time = parser.get_last_update_timestamp(malformed_path, "DSET_ONE")
-    assert update_time is None
-    assert "Failed to parse TOC file" in caplog.text
+    # 3. Test that the parser is case-insensitive for the dataset_id
+    update_time = parser.get_last_update_timestamp("TPS00001")
+    assert update_time is not None
+    assert update_time == datetime(2023, 10, 26, 10, 0, 0, tzinfo=timezone.utc)
