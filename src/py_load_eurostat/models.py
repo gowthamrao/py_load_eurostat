@@ -1,5 +1,5 @@
 """
-Core data models for the eurostat-loader package.
+Core data models for the py-load-eurostat package.
 
 This module defines Pydantic models that represent the core domain objects
 of the application, such as SDMX metadata structures, code lists, and

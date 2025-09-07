@@ -34,7 +34,7 @@ class Fetcher:
         """
         self.settings = settings
         self.client = httpx.Client(
-            headers={"User-Agent": "eurostat-loader/1.0"},
+            headers={"User-Agent": "py-load-eurostat/1.0"},
             follow_redirects=True,
             timeout=60.0,
         )
