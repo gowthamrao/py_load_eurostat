@@ -5,13 +5,13 @@ This module brings together all the components (fetcher, parser, transformer,
 loader) to execute the end-to-end data ingestion process.
 """
 import logging
-from datetime import datetime
+from datetime import datetime, UTC
 
 from .config import settings
 from .fetcher import Fetcher
 from .loader.postgresql import PostgresLoader
 from .models import IngestionHistory, IngestionStatus
-from .parser import SdmxParser, TOCParser
+from .parser import SdmxParser, InventoryParser
 from .transformer import Transformer
 
 logger = logging.getLogger(__name__)
@@ -28,24 +28,24 @@ def run_pipeline(dataset_id: str, representation: str, load_strategy: str):
     """
     loader = None
     history_record = None  # Initialize to None for robust error handling
-    start_time = datetime.utcnow()
+    start_time = datetime.now(UTC)
 
     try:
         # 1. Initialize components
         fetcher = Fetcher(settings)
         sdmx_parser = SdmxParser()
-        toc_parser = TOCParser()
         loader = PostgresLoader(settings.db)
         data_schema = "eurostat_data"
         meta_schema = "eurostat_meta"
 
         # 2. Delta Load Check
         logger.info(f"Checking for remote updates for dataset '{dataset_id}'...")
-        toc_path = fetcher.get_toc_xml()
-        remote_last_update = toc_parser.get_last_update_timestamp(toc_path, dataset_id)
+        inventory_path = fetcher.get_data_inventory()
+        inventory_parser = InventoryParser(inventory_path)
+        remote_last_update = inventory_parser.get_last_update_timestamp(dataset_id)
 
         if not remote_last_update:
-            raise RuntimeError(f"Could not find dataset '{dataset_id}' in Eurostat's Table of Contents.")
+            raise RuntimeError(f"Could not find dataset '{dataset_id}' in Eurostat's bulk data inventory.")
 
         history_record = IngestionHistory(
             dataset_id=dataset_id,
@@ -65,7 +65,7 @@ def run_pipeline(dataset_id: str, representation: str, load_strategy: str):
                     f"{last_ingestion.source_last_update}). Skipping ingestion."
                 )
                 history_record.status = IngestionStatus.SUCCESS
-                history_record.end_time = datetime.utcnow()
+                history_record.end_time = datetime.now(UTC)
                 history_record.rows_loaded = 0
                 return  # Graceful exit, finally block will still run
 
@@ -107,13 +107,13 @@ def run_pipeline(dataset_id: str, representation: str, load_strategy: str):
 
         # 7. Record successful ingestion
         history_record.status = IngestionStatus.SUCCESS
-        history_record.end_time = datetime.utcnow()
+        history_record.end_time = datetime.now(UTC)
         logger.info(f"Pipeline completed successfully for dataset {dataset_id}.")
 
     except Exception as e:
         logger.critical(f"Pipeline failed for dataset {dataset_id}: {e}", exc_info=True)
         history_record.status = IngestionStatus.FAILED
-        history_record.end_time = datetime.utcnow()
+        history_record.end_time = datetime.now(UTC)
         history_record.error_details = str(e)
         raise
 

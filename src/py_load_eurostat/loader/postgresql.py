@@ -96,18 +96,18 @@ class PostgresLoader(LoaderInterface):
             ))
 
             def codelist_data_generator(codelist: Codelist) -> Generator[bytes, None, None]:
-                for item in codelist.items:
+                for item in codelist.codes.values():
                     row = (
                         item.id,
-                        item.name_en,
-                        item.description_en,
+                        item.name,
+                        item.description,
                         item.parent_id,
                     )
                     row_str = '\t'.join(str(v) if v is not None else '\\N' for v in row) + '\n'
                     yield row_str.encode('utf-8')
 
             for cl_id, codelist_obj in codelists.items():
-                cl_table_name = f"cl_{cl_id.lower()}"
+                cl_table_name = cl_id.lower()
                 staging_cl_table = f"staging_{cl_table_name}"
 
                 # Create the main table if it doesn't exist

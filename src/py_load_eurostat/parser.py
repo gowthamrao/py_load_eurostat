@@ -4,7 +4,7 @@ Parsers for handling Eurostat data and metadata formats.
 This module contains:
 - SdmxParser: For parsing SDMX-ML metadata files (DSDs, Codelists).
 - TsvParser: For parsing the unique structure of Eurostat TSV files.
-- TOCParser: For parsing the Eurostat Table of Contents to find dataset update times.
+- InventoryParser: For parsing the bulk download inventory to find dataset update times.
 """
 import gzip
 import logging
@@ -163,44 +163,53 @@ class TsvParser:
     def __next__(self):
         return next(self._iterator)
 
-class TOCParser:
-    """Parses the Eurostat Table of Contents (TOC) file."""
+class InventoryParser:
+    """
+    Parses the Eurostat bulk data inventory CSV file.
+    """
+    def __init__(self, inventory_path: Path):
+        self.inventory_path = inventory_path
+        self._update_map = self._load_inventory()
 
-    def get_last_update_timestamp(
-        self, toc_path: Path, dataset_id: str
-    ) -> Optional[datetime]:
+    def _load_inventory(self) -> Dict[str, datetime]:
         """
-        Finds the last update timestamp for a specific dataset from the TOC file
-        by manually parsing the XML to avoid pysdmx issues with TOC-only files.
+        Loads the inventory CSV into a dictionary mapping dataset codes to
+        their last update timestamps.
         """
-        logger.info(f"Parsing TOC file {toc_path} for dataset '{dataset_id}'")
+        logger.info(f"Loading and parsing inventory file: {self.inventory_path}")
         try:
-            tree = ET.parse(toc_path)
-            root = tree.getroot()
+            df = pd.read_csv(self.inventory_path)
+            # We only care about TSV files, which are the datasets
+            df = df[df['NAME'].str.endswith('.tsv.gz', na=False)]
 
-            # Define the namespaces used in the SDMX file
-            ns = {
-                'message': 'http://www.sdmx.org/resources/sdmxml/schemas/v2_1/message',
-                'structure': 'http://www.sdmx.org/resources/sdmxml/schemas/v2_1/structure',
-            }
+            # Extract the dataset code (e.g., 'tps00001') from the filename
+            df['dataset_code'] = df['NAME'].str.replace(r'\.tsv\.gz$', '', regex=True)
 
-            # Find all Dataflow elements within the Structures -> Dataflows path
-            dataflows = root.findall('.//structure:Dataflow', ns)
+            # Convert the DATE column to timezone-aware datetime objects
+            # The API returns ISO 8601 format, which pandas handles well
+            df['last_update'] = pd.to_datetime(df['DATE'], utc=True)
 
-            for dataflow in dataflows:
-                if dataflow.attrib.get('id', '').lower() == dataset_id.lower():
-                    timestamp_str = dataflow.attrib.get('validFrom')
-                    if timestamp_str:
-                        # Parse the ISO 8601 timestamp string
-                        # It might have a 'Z' for UTC, which Python < 3.11 doesn't like
-                        if timestamp_str.endswith('Z'):
-                            timestamp_str = timestamp_str[:-1] + '+00:00'
-                        dt = datetime.fromisoformat(timestamp_str)
-                        logger.info(f"Found dataflow for '{dataset_id}' with validFrom date: {dt}")
-                        return dt
+            # Create the lookup map
+            update_map = df.set_index('dataset_code')['last_update'].to_dict()
+            logger.info(f"Successfully parsed {len(update_map)} dataset entries from inventory.")
+            return update_map
+        except (FileNotFoundError, pd.errors.ParserError, KeyError) as e:
+            logger.error(f"Failed to load or parse inventory file {self.inventory_path}: {e}", exc_info=True)
+            return {}
 
-            logger.warning(f"Dataset '{dataset_id}' not found in the TOC file.")
-            return None
-        except (ET.ParseError, KeyError, ValueError) as e:
-            logger.error(f"Failed to parse TOC file {toc_path}: {e}", exc_info=True)
-            return None
+    def get_last_update_timestamp(self, dataset_id: str) -> Optional[datetime]:
+        """
+        Gets the last update timestamp for a specific dataset from the inventory.
+
+        Args:
+            dataset_id: The ID of the dataset (e.g., 'nama_10_gdp').
+
+        Returns:
+            A timezone-aware datetime object or None if the dataset is not found.
+        """
+        update_time = self._update_map.get(dataset_id.lower())
+        if update_time:
+            logger.info(f"Found last update time for '{dataset_id}': {update_time}")
+        else:
+            logger.warning(f"Dataset '{dataset_id}' not found in the inventory file.")
+        return update_time
