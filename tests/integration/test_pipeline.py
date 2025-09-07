@@ -3,9 +3,9 @@ Integration tests for the main pipeline.
 """
 from pathlib import Path
 import pytest
-from eurostat_loader.config import DatabaseSettings, settings
-from eurostat_loader.loader.postgresql import PostgresLoader
-from eurostat_loader.pipeline import run_pipeline
+from py_load_eurostat.config import DatabaseSettings, settings
+from py_load_eurostat.loader.postgresql import PostgresLoader
+from py_load_eurostat.pipeline import run_pipeline
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
@@ -17,15 +17,15 @@ def test_full_pipeline_run_happy_path(db_settings: DatabaseSettings, mocker):
     """
     # 1. Mock the fetcher to return local fixture files instead of making network calls
     mocker.patch(
-        "eurostat_loader.fetcher.fetcher.get_dsd_xml",
+        "py_load_eurostat.fetcher.fetcher.get_dsd_xml",
         return_value=FIXTURES_DIR / "dsd_tps00001.xml",
     )
     mocker.patch(
-        "eurostat_loader.fetcher.fetcher.get_codelist_xml",
+        "py_load_eurostat.fetcher.fetcher.get_codelist_xml",
         return_value=FIXTURES_DIR / "codelist_geo.xml",
     )
     mocker.patch(
-        "eurostat_loader.fetcher.fetcher.get_dataset_tsv",
+        "py_load_eurostat.fetcher.fetcher.get_dataset_tsv",
         return_value=FIXTURES_DIR / "tps00001.tsv.gz",
     )
 

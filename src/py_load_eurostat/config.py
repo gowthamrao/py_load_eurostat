@@ -40,16 +40,11 @@ class AppSettings(BaseSettings):
     The main application settings model.
     """
     model_config = SettingsConfigDict(
-        env_prefix='EUROSTAT_LOADER_',
+        env_prefix='PY_LOAD_EUROSTAT_',
         env_nested_delimiter='__'
     )
     db: DatabaseSettings = Field(default_factory=DatabaseSettings)
     cache: CacheSettings = Field(default_factory=CacheSettings)
     log: LoggingSettings = Field(default_factory=LoggingSettings)
 
-@lru_cache
-def get_settings() -> AppSettings:
-    """
-    Returns a cached instance of the application settings.
-    """
-    return AppSettings()
+settings = AppSettings()

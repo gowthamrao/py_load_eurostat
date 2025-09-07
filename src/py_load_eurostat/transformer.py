@@ -9,7 +9,9 @@ import re
 from pathlib import Path
 from typing import Dict, Generator, Tuple, Optional
 
-from .models import DSD, CodeList, Observation
+import pandas as pd
+
+from .models import DSD, Codelist, Observation
 from .parser import TsvParser
 
 logger = logging.getLogger(__name__)
@@ -24,7 +26,7 @@ class Transformer:
     of Observation objects.
     """
 
-    def __init__(self, dsd: DSD, codelists: Dict[str, CodeList]):
+    def __init__(self, dsd: DSD, codelists: Dict[str, Codelist]):
         """
         Initializes the Transformer.
 
@@ -108,7 +110,7 @@ class Transformer:
                 raw_value = raw_row.get(time_period)
 
                 # Skip if the value is missing
-                if raw_value is None:
+                if pd.isna(raw_value):
                     continue
 
                 obs_value, obs_flags = self._parse_value(raw_value)

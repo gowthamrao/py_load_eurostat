@@ -12,7 +12,7 @@ import psycopg
 from psycopg.rows import class_row
 
 from .base import LoaderInterface
-from ..models import DSD, CodeList, Observation, IngestionHistory
+from ..models import DSD, Codelist, Observation, IngestionHistory
 from ..config import DatabaseSettings
 
 logger = logging.getLogger(__name__)
@@ -76,7 +76,7 @@ class PostgresLoader(LoaderInterface):
         self.conn.commit()
         logger.info(f"Table '{schema}.{table_name}' is ready.")
 
-    def manage_codelists(self, codelists: Dict[str, CodeList], schema: str) -> None:
+    def manage_codelists(self, codelists: Dict[str, Codelist], schema: str) -> None:
         logger.info(f"Preparing {len(codelists)} codelist tables in schema '{schema}'")
         with self.conn.cursor() as cur:
             cur.execute("CREATE SCHEMA IF NOT EXISTS %s;", (schema,))

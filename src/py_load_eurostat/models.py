@@ -19,9 +19,9 @@ class Code(BaseModel):
     description: Optional[str] = Field(default=None, description="An optional detailed description of the code.")
     parent_id: Optional[str] = Field(default=None, description="The ID of the parent code in a hierarchical code list.")
 
-class CodeList(BaseModel):
-    """Represents an SDMX Code List, a collection of codes for a dimension."""
-    id: str = Field(description="The unique identifier for the code list (e.g., 'CL_GEO').")
+class Codelist(BaseModel):
+    """Represents an SDMX Codelist, a collection of codes for a dimension."""
+    id: str = Field(description="The unique identifier for the codelist (e.g., 'CL_GEO').")
     version: str = Field(description="The version of the code list.")
     codes: Dict[str, Code] = Field(description="A mapping from code IDs to Code objects.")
 
@@ -71,6 +71,9 @@ class IngestionHistory(BaseModel):
     Represents a record in the ingestion history table.
     Corresponds to the schema defined in FRD section 4.1.
     """
+    class Config:
+        arbitrary_types_allowed = True
+
     ingestion_id: Optional[int] = Field(default=None, description="Primary key for the ingestion record.")
     dataset_id: str = Field(description="The Eurostat dataset identifier (e.g., 'nama_10_gdp').")
     dsd_version: str = Field(description="The version of the DSD used for this load.")

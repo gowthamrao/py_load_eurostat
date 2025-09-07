@@ -5,7 +5,7 @@ import os
 import pytest
 from testcontainers.postgres import PostgresContainer
 
-from eurostat_loader.config import DatabaseSettings
+from py_load_eurostat.config import DatabaseSettings
 
 @pytest.fixture(scope="session", autouse=True)
 def mock_env():
@@ -15,9 +15,9 @@ def mock_env():
     are first imported by the test runner. The value is overridden by the
     db_settings fixture for actual tests.
     """
-    os.environ["EUROSTAT_LOADER_DB__PASSWORD"] = "dummy_password_for_import"
+    os.environ["PY_LOAD_EUROSTAT_DB__PASSWORD"] = "dummy_password_for_import"
     yield
-    del os.environ["EUROSTAT_LOADER_DB__PASSWORD"]
+    del os.environ["PY_LOAD_EUROSTAT_DB__PASSWORD"]
 
 
 @pytest.fixture(scope="session")

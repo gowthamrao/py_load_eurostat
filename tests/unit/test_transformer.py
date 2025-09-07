@@ -3,8 +3,8 @@ Unit tests for the transformer module.
 """
 from pathlib import Path
 import pytest
-from eurostat_loader.models import DSD, CodeList, Dimension
-from eurostat_loader.transformer import Transformer
+from py_load_eurostat.models import DSD, Codelist, Dimension
+from py_load_eurostat.transformer import Transformer
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
