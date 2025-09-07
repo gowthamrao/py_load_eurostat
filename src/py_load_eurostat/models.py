@@ -7,6 +7,7 @@ observational data. These models are used as Data Transfer Objects (DTOs)
 between the different layers of the pipeline.
 """
 from datetime import datetime
+from enum import StrEnum
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 
@@ -51,7 +52,7 @@ class Observation(BaseModel):
     Represents a single observation in a tidy (long) format dataset.
     The dimension values are stored in a flexible dictionary.
     """
-    dimensions: Dict[str, str] = Field(description="A dictionary mapping dimension IDs to their code values.")
+    dimensions: Dict[str, Optional[str]] = Field(description="A dictionary mapping dimension IDs to their code values.")
     time_period: str = Field(description="The time period for the observation (e.g., '2023' or '2023-Q1').")
     value: Optional[float] = Field(description="The numeric observation value.")
     flags: Optional[str] = Field(description="A string containing any flags associated with the observation.")
@@ -59,7 +60,7 @@ class Observation(BaseModel):
 
 # === Ingestion History Models ===
 
-class IngestionStatus(str):
+class IngestionStatus(StrEnum):
     """Enum for the status of an ingestion process."""
     PENDING = "PENDING"
     RUNNING = "RUNNING"

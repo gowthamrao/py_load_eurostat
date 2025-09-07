@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<message:Structure xmlns:message="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/message" xmlns:structure="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/structure" xmlns:common="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/common">
+  <message:Header>
+    <message:ID>ID-toc-new</message:ID>
+    <message:Test>true</message:Test>
+    <message:Prepared>2025-09-08T12:00:00Z</message:Prepared>
+    <message:Sender id="ESTAT"/>
+  </message:Header>
+  <message:Structures>
+    <structure:Dataflows>
+      <structure:Dataflow id="DSET_ONE" agencyID="ESTAT" version="1.0" isFinal="true" validFrom="2023-10-01T00:00:00Z">
+        <common:Name xml:lang="en">Dataset One</common:Name>
+      </structure:Dataflow>
+      <structure:Dataflow id="DSET_TWO" agencyID="ESTAT" version="1.1" isFinal="true" validFrom="2024-03-15T00:00:00Z">
+        <common:Name xml:lang="en">Dataset Two</common:Name>
+      </structure:Dataflow>
+      <structure:Dataflow id="TPS00001" agencyID="ESTAT" version="1.1" isFinal="true" validFrom="2024-12-01T00:00:00Z">
+        <common:Name xml:lang="en">Test Dataset For Integration Test - NEWER</common:Name>
+      </structure:Dataflow>
+    </structure:Dataflows>
+  </message:Structures>
+</message:Structure>

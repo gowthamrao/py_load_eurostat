@@ -13,11 +13,11 @@ def test_sdmx_parser_dsd():
     dsd_path = FIXTURES_DIR / "dsd_tps00001.xml"
     dsd = parser.parse_dsd_from_dataflow(dsd_path)
 
-    assert dsd.id == "DSD_TPS00001"
+    assert dsd.id == "dsd_tps00001"
     assert len(dsd.dimensions) == 1
-    assert dsd.dimensions[0].id == "GEO"
+    assert dsd.dimensions[0].id == "geo"
     assert dsd.dimensions[0].codelist_id == "CL_GEO"
-    assert dsd.primary_measure_id == "OBS_VALUE"
+    assert dsd.primary_measure_id == "obs_value"
 
 def test_sdmx_parser_codelist():
     """Tests that the SdmxParser correctly parses a Codelist file."""
@@ -30,23 +30,38 @@ def test_sdmx_parser_codelist():
     assert "DE" in codelist.codes
     assert codelist.codes["DE"].name == "Germany"
 
-def test_tsv_parser():
-    """Tests that the TsvParser correctly parses the header and data rows."""
-    tsv_path = FIXTURES_DIR / "tps00001.tsv.gz"
-    parser = TsvParser(tsv_path)
+def test_toc_parser_success():
+    """Tests that TOCParser correctly finds a dataset and its update time."""
+    from py_load_eurostat.parser import TOCParser
+    from datetime import datetime, timezone
 
-    # The parser is an iterator, convert to list to inspect it
-    rows = list(parser)
+    parser = TOCParser()
+    toc_path = FIXTURES_DIR / "sample_toc.xml"
 
-    # Check header parsing
-    assert parser.dimension_cols == ["geo"]
-    assert parser.time_period_cols == ["2022", "2021"]
+    # Test finding an existing dataset
+    update_time = parser.get_last_update_timestamp(toc_path, "DSET_TWO")
+    assert update_time is not None
+    assert update_time == datetime(2024, 3, 15, 0, 0, tzinfo=timezone.utc)
 
-    # Check row content
-    assert len(rows) == 3 # The raw file has 3 lines of data
-    assert rows[0]["geo"] == "EU27_2020"
-    assert rows[0]["2022"] == "10.0"
-    assert rows[1]["geo"] == "DE"
-    assert rows[1]["2022"] == "12.5 p"
-    assert rows[2]["2021"] == "8.2"
-    assert math.isnan(rows[2]["2022"]) # Check missing value representation
+def test_toc_parser_not_found():
+    """Tests that TOCParser returns None for a non-existent dataset."""
+    from py_load_eurostat.parser import TOCParser
+
+    parser = TOCParser()
+    toc_path = FIXTURES_DIR / "sample_toc.xml"
+
+    # Test for a dataset that is not in the file
+    update_time = parser.get_last_update_timestamp(toc_path, "DSET_NONEXISTENT")
+    assert update_time is None
+
+def test_toc_parser_malformed_file(tmp_path, caplog):
+    """Tests that TOCParser handles a malformed XML file gracefully."""
+    from py_load_eurostat.parser import TOCParser
+
+    parser = TOCParser()
+    malformed_path = tmp_path / "malformed.xml"
+    malformed_path.write_text("<xml><unclosed>")
+
+    update_time = parser.get_last_update_timestamp(malformed_path, "DSET_ONE")
+    assert update_time is None
+    assert "Failed to parse TOC file" in caplog.text

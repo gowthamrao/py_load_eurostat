@@ -9,6 +9,7 @@ import logging
 from typing import Dict, Generator, Optional, Tuple
 
 import psycopg
+from psycopg import sql
 from psycopg.rows import class_row
 
 from .base import LoaderInterface
@@ -44,10 +45,14 @@ class PostgresLoader(LoaderInterface):
     def prepare_schema(self, dsd: DSD, table_name: str, schema: str) -> None:
         self.dsd = dsd
         logger.info(f"Preparing schema '{schema}' and table '{table_name}'")
+        history_table_name = "_ingestion_history"
+
         with self.conn.cursor() as cur:
-            cur.execute("CREATE SCHEMA IF NOT EXISTS %s;", (schema,))
-            cur.execute(f"""
-            CREATE TABLE IF NOT EXISTS {schema}._ingestion_history (
+            cur.execute(sql.SQL("CREATE SCHEMA IF NOT EXISTS {schema}").format(
+                schema=sql.Identifier(schema)
+            ))
+            cur.execute(sql.SQL("""
+            CREATE TABLE IF NOT EXISTS {schema}.{table} (
                 ingestion_id SERIAL PRIMARY KEY,
                 dataset_id TEXT NOT NULL,
                 dsd_version TEXT,
@@ -60,7 +65,10 @@ class PostgresLoader(LoaderInterface):
                 source_last_update TIMESTAMPTZ,
                 error_details TEXT
             );
-            """)
+            """).format(
+                schema=sql.Identifier(schema),
+                table=sql.Identifier(history_table_name)
+            ))
 
             obs_flag_col_name = next((attr.id for attr in dsd.attributes if 'FLAG' in attr.id.upper()), 'obs_flags')
             cols = [f'"{dim.id}" TEXT' for dim in dsd.dimensions]
@@ -72,29 +80,38 @@ class PostgresLoader(LoaderInterface):
             pk_constraint = f"PRIMARY KEY ({', '.join(pk_cols)})"
             cols.append(pk_constraint)
 
-            cur.execute(f"CREATE TABLE IF NOT EXISTS {schema}.{table_name} ({', '.join(cols)});")
+            cur.execute(sql.SQL("CREATE TABLE IF NOT EXISTS {schema}.{table} ({cols})").format(
+                schema=sql.Identifier(schema),
+                table=sql.Identifier(table_name),
+                cols=sql.SQL(', ').join(sql.SQL(c) for c in cols)
+            ))
         self.conn.commit()
         logger.info(f"Table '{schema}.{table_name}' is ready.")
 
     def manage_codelists(self, codelists: Dict[str, Codelist], schema: str) -> None:
         logger.info(f"Preparing {len(codelists)} codelist tables in schema '{schema}'")
         with self.conn.cursor() as cur:
-            cur.execute("CREATE SCHEMA IF NOT EXISTS %s;", (schema,))
+            cur.execute(sql.SQL("CREATE SCHEMA IF NOT EXISTS {schema}").format(
+                schema=sql.Identifier(schema)
+            ))
             for cl_id in codelists:
-                table_name = f"cl_{cl_id.lower()}"
-                cur.execute(f"""
-                CREATE TABLE IF NOT EXISTS {schema}.{table_name} (
+                cl_table_name = f"cl_{cl_id.lower()}"
+                cur.execute(sql.SQL("""
+                CREATE TABLE IF NOT EXISTS {schema}.{table} (
                     code TEXT PRIMARY KEY,
                     label_en TEXT,
                     description_en TEXT,
                     parent_code TEXT
                 );
-                """)
+                """).format(
+                    schema=sql.Identifier(schema),
+                    table=sql.Identifier(cl_table_name)
+                ))
         self.conn.commit()
         logger.info("Codelist tables are ready.")
 
     def bulk_load_staging(
-        self, table_name: str, schema: str, data_stream: Generator[Observation, None, None], use_unlogged_table: bool = True
+        self, dsd: DSD, table_name: str, schema: str, data_stream: Generator[Observation, None, None], use_unlogged_table: bool = True
     ) -> Tuple[str, int]:
         if not self.dsd:
             raise RuntimeError("DSD must be set via prepare_schema before loading.")
@@ -103,8 +120,15 @@ class PostgresLoader(LoaderInterface):
         unlogged_str = "UNLOGGED" if use_unlogged_table else ""
 
         with self.conn.cursor() as cur:
-            cur.execute(f"DROP TABLE IF EXISTS {schema}.{staging_table};")
-            cur.execute(f"CREATE {unlogged_str} TABLE {schema}.{staging_table} (LIKE {schema}.{table_name} INCLUDING ALL);")
+            cur.execute(sql.SQL("DROP TABLE IF EXISTS {schema}.{table}").format(
+                schema=sql.Identifier(schema), table=sql.Identifier(staging_table)
+            ))
+            cur.execute(sql.SQL("CREATE {unlogged} TABLE {schema}.{staging_table} (LIKE {schema}.{target_table} INCLUDING ALL)").format(
+                unlogged=sql.SQL(unlogged_str),
+                schema=sql.Identifier(schema),
+                staging_table=sql.Identifier(staging_table),
+                target_table=sql.Identifier(table_name)
+            ))
         logger.info(f"Created staging table: {schema}.{staging_table}")
 
         dim_order = [d.id for d in sorted(self.dsd.dimensions, key=lambda x: x.position)]
@@ -122,7 +146,12 @@ class PostgresLoader(LoaderInterface):
             logger.info(f"Starting COPY to {schema}.{staging_table}...")
             copy_gen = data_generator_for_copy(data_stream)
 
-            with cur.copy(f"COPY {schema}.{staging_table} ({', '.join(f'\"{c}\"' for c in copy_columns)}) FROM STDIN") as copy:
+            copy_sql = sql.SQL("COPY {schema}.{table} ({columns}) FROM STDIN").format(
+                schema=sql.Identifier(schema),
+                table=sql.Identifier(staging_table),
+                columns=sql.SQL(',').join(map(sql.Identifier, copy_columns))
+            )
+            with cur.copy(copy_sql) as copy:
                 for data_chunk in copy_gen:
                     copy.write(data_chunk)
             row_count = cur.rowcount
@@ -134,37 +163,55 @@ class PostgresLoader(LoaderInterface):
     def finalize_load(self, staging_table: str, target_table: str, schema: str) -> None:
         logger.info(f"Finalizing load from '{staging_table}' to '{target_table}'.")
         with self.conn.cursor() as cur:
-            cur.execute(f"""
+            # Using sql.SQL to compose the query safely
+            truncate_sql = sql.SQL("TRUNCATE TABLE {schema}.{target}").format(
+                schema=sql.Identifier(schema), target=sql.Identifier(target_table)
+            )
+            insert_sql = sql.SQL("INSERT INTO {schema}.{target} SELECT * FROM {schema}.{staging}").format(
+                schema=sql.Identifier(schema),
+                target=sql.Identifier(target_table),
+                staging=sql.Identifier(staging_table)
+            )
+            drop_sql = sql.SQL("DROP TABLE {schema}.{staging}").format(
+                schema=sql.Identifier(schema), staging=sql.Identifier(staging_table)
+            )
+
+            cur.execute(sql.SQL("""
             BEGIN;
-            TRUNCATE TABLE {schema}.{target_table};
-            INSERT INTO {schema}.{target_table} SELECT * FROM {schema}.{staging_table};
+            {truncate};
+            {insert};
             COMMIT;
-            """)
-            cur.execute(f"DROP TABLE {schema}.{staging_table};")
+            """).format(truncate=truncate_sql, insert=insert_sql))
+            cur.execute(drop_sql)
         self.conn.commit()
         logger.info("Load finalized successfully.")
 
     def get_ingestion_state(self, dataset_id: str, schema: str) -> Optional[IngestionHistory]:
         logger.info(f"Querying ingestion state for dataset '{dataset_id}'")
+        query = sql.SQL("SELECT * FROM {schema}._ingestion_history WHERE dataset_id = %s AND status = 'SUCCESS' ORDER BY end_time DESC LIMIT 1;").format(
+            schema=sql.Identifier(schema)
+        )
         with self.conn.cursor(row_factory=class_row(IngestionHistory)) as cur:
-            cur.execute(
-                f"SELECT * FROM {schema}._ingestion_history WHERE dataset_id = %s AND status = 'SUCCESS' ORDER BY end_time DESC LIMIT 1;",
-                (dataset_id,)
-            )
+            cur.execute(query, (dataset_id,))
             return cur.fetchone()
 
     def save_ingestion_state(self, record: IngestionHistory, schema: str) -> None:
         logger.info(f"Saving ingestion state for dataset '{record.dataset_id}' with status '{record.status}'")
         with self.conn.cursor() as cur:
-            field_names = list(IngestionHistory.model_fields.keys())
-            columns = ', '.join(f'"{name}"' for name in field_names)
-            placeholders = ', '.join(['%s'] * len(field_names))
-            values = tuple(getattr(record, name) for name in field_names)
+            # Exclude ingestion_id from the insert, as it's a SERIAL column
+            record_dict = record.model_dump(exclude={'ingestion_id'})
 
-            cur.execute(
-                f"INSERT INTO {schema}._ingestion_history ({columns}) VALUES ({placeholders})",
-                values
+            field_names = list(record_dict.keys())
+            columns = sql.SQL(', ').join(map(sql.Identifier, field_names))
+            placeholders = sql.SQL(', ').join(sql.Placeholder() * len(field_names))
+            values = list(record_dict.values())
+
+            query = sql.SQL("INSERT INTO {schema}._ingestion_history ({fields}) VALUES ({placeholders})").format(
+                schema=sql.Identifier(schema),
+                fields=columns,
+                placeholders=placeholders
             )
+            cur.execute(query, values)
         self.conn.commit()
 
     def close_connection(self) -> None:
