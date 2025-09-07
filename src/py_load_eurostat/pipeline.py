@@ -11,10 +11,11 @@ from .config import settings
 from .fetcher import Fetcher
 from .loader.postgresql import PostgresLoader
 from .models import IngestionHistory, IngestionStatus
-from .parser import SdmxParser
+from .parser import SdmxParser, TOCParser
 from .transformer import Transformer
 
 logger = logging.getLogger(__name__)
+
 
 def run_pipeline(dataset_id: str, representation: str, load_strategy: str):
     """
@@ -26,23 +27,49 @@ def run_pipeline(dataset_id: str, representation: str, load_strategy: str):
         load_strategy: The load strategy ('Full' or 'Delta').
     """
     loader = None
-
-    history_record = IngestionHistory(
-        dataset_id=dataset_id,
-        dsd_version="N/A",
-        load_strategy=load_strategy,
-        representation=representation,
-        status=IngestionStatus.RUNNING,
-        source_last_update=datetime.fromtimestamp(0)
-    )
+    history_record = None  # Initialize to None for robust error handling
+    start_time = datetime.utcnow()
 
     try:
         # 1. Initialize components
         fetcher = Fetcher(settings)
         sdmx_parser = SdmxParser()
+        toc_parser = TOCParser()
         loader = PostgresLoader(settings.db)
+        data_schema = "eurostat_data"
+        meta_schema = "eurostat_meta"
 
-        # 2. Fetch and parse metadata
+        # 2. Delta Load Check
+        logger.info(f"Checking for remote updates for dataset '{dataset_id}'...")
+        toc_path = fetcher.get_toc_xml()
+        remote_last_update = toc_parser.get_last_update_timestamp(toc_path, dataset_id)
+
+        if not remote_last_update:
+            raise RuntimeError(f"Could not find dataset '{dataset_id}' in Eurostat's Table of Contents.")
+
+        history_record = IngestionHistory(
+            dataset_id=dataset_id,
+            dsd_version="N/A",
+            load_strategy=load_strategy,
+            representation=representation,
+            status=IngestionStatus.RUNNING,
+            start_time=start_time,
+            source_last_update=remote_last_update,
+        )
+
+        if load_strategy.lower() == "delta":
+            last_ingestion = loader.get_ingestion_state(dataset_id, data_schema)
+            if last_ingestion and last_ingestion.source_last_update >= remote_last_update:
+                logger.info(
+                    f"Local data for '{dataset_id}' is up-to-date (last source update: "
+                    f"{last_ingestion.source_last_update}). Skipping ingestion."
+                )
+                history_record.status = IngestionStatus.SUCCESS
+                history_record.end_time = datetime.utcnow()
+                history_record.rows_loaded = 0
+                return  # Graceful exit, finally block will still run
+
+        # 3. Fetch and parse metadata
         logger.info("Fetching and parsing metadata...")
         dsd_xml_path = fetcher.get_dsd_xml(dataset_id)
         dsd = sdmx_parser.parse_dsd_from_dataflow(dsd_xml_path)

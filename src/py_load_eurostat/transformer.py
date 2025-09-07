@@ -85,8 +85,9 @@ class Transformer:
         """
         Creates a generator that yields transformed Observation objects.
 
-        This method streams the data from the TSV file, unpivots it,
-        and transforms it into a clean, long format.
+        This method streams data from the TsvParser (which already provides it
+        in a long format) and applies final transformations, such as value/flag
+        parsing and code-to-label replacement.
 
         Args:
             tsv_path: Path to the gzipped TSV data file.
@@ -99,43 +100,36 @@ class Transformer:
         logger.info(f"Starting transformation for {tsv_path} with '{representation}' representation.")
         parser = TsvParser(tsv_path)
 
-        for raw_row in parser:
-            # Extract the dimension values from the raw row
+        for raw_obs in parser:
+            # The parser now yields one observation per dictionary
+            obs_value, obs_flags = self._parse_value(raw_obs.get('value'))
+
+            # If both value and flags are None after parsing, it's an empty cell
+            if obs_value is None and obs_flags is None:
+                continue
+
+            # Extract the dimension values from the raw observation
             base_dimensions = {
-                dim_id: raw_row.get(dim_id) for dim_id in parser.dimension_cols
+                dim.id: raw_obs.get(dim.id) for dim in self.dsd.dimensions
             }
 
-            # Unpivot: iterate through the time periods in the raw row
-            for time_period in parser.time_period_cols:
-                raw_value = raw_row.get(time_period)
-
-                # Skip if the value is missing
-                if pd.isna(raw_value):
-                    continue
-
-                obs_value, obs_flags = self._parse_value(raw_value)
-
-                # If both value and flags are None after parsing, it's an empty cell
-                if obs_value is None and obs_flags is None:
-                    continue
-
-                # Handle the data representation (Standard vs. Full)
+            # Handle the data representation (Standard vs. Full)
+            if representation.lower() == "full":
                 final_dimensions = {}
-                if representation.lower() == "full":
-                    for dim_id, code_val in base_dimensions.items():
-                        codelist = self.dim_to_codelist_map.get(dim_id)
-                        if codelist and code_val in codelist.codes:
-                            final_dimensions[dim_id] = codelist.codes[code_val].name
-                        else:
-                            final_dimensions[dim_id] = code_val # Fallback to code
-                else: # Standard representation
-                    final_dimensions = base_dimensions
+                for dim_id, code_val in base_dimensions.items():
+                    codelist = self.dim_to_codelist_map.get(dim_id)
+                    if codelist and code_val in codelist.codes:
+                        final_dimensions[dim_id] = codelist.codes[code_val].name
+                    else:
+                        final_dimensions[dim_id] = code_val # Fallback to code
+            else: # Standard representation
+                final_dimensions = base_dimensions
 
-                yield Observation(
-                    dimensions=final_dimensions,
-                    time_period=time_period,
-                    value=obs_value,
-                    flags=obs_flags,
-                )
+            yield Observation(
+                dimensions=final_dimensions,
+                time_period=raw_obs.get('time_period'),
+                value=obs_value,
+                flags=obs_flags,
+            )
 
         logger.info(f"Finished transformation for {tsv_path}.")

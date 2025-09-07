@@ -23,7 +23,7 @@ classifiers = [
 dependencies = [
     "httpx",
     "pandas",
-    "pysdmx",
+    "pysdmx[xml]",
     "psycopg>=3.1",
     "pydantic",
     "pydantic-settings",

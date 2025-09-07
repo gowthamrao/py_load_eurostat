@@ -47,26 +47,24 @@ def test_transformer_transform(mock_dsd):
 
     observations = list(transformer.transform(tsv_path))
 
-    # We expect 3 observations, as one value in the source file is missing (':')
-    assert len(observations) == 3
+    # The source file has 3 data rows and 2 time periods, with one missing value.
+    # So we expect (3 * 2) - 1 = 5 observations.
+    assert len(observations) == 5
 
-    # Check the first observation
-    obs1 = observations[0]
-    assert obs1.dimensions["geo"] == "EU27_2020"
-    assert obs1.time_period == "2022"
-    assert obs1.value == 10.0
-    assert obs1.flags is None
+    # Spot-check a few observations to ensure correctness
 
-    # Check the second observation
-    obs2 = observations[1]
-    assert obs2.dimensions["geo"] == "EU27_2020"
-    assert obs2.time_period == "2021"
-    assert obs2.value == 9.5
-    assert obs2.flags is None
+    # Find the observation for DE in 2022
+    de_2022 = next((obs for obs in observations if obs.dimensions.get("geo") == "DE" and obs.time_period == "2022"), None)
+    assert de_2022 is not None
+    assert de_2022.value == 12.5
+    assert de_2022.flags == "p"
 
-    # Check the third observation (from the second row of the file)
-    obs3 = observations[2]
-    assert obs3.dimensions["geo"] == "DE"
-    assert obs3.time_period == "2022"
-    assert obs3.value == 12.5
-    assert obs3.flags == "p"
+    # Find the observation for FR in 2021
+    fr_2021 = next((obs for obs in observations if obs.dimensions.get("geo") == "FR" and obs.time_period == "2021"), None)
+    assert fr_2021 is not None
+    assert fr_2021.value == 8.2
+    assert fr_2021.flags is None
+
+    # Ensure the missing value for FR in 2022 was not included
+    fr_2022 = next((obs for obs in observations if obs.dimensions.get("geo") == "FR" and obs.time_period == "2022"), None)
+    assert fr_2022 is None
