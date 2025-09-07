@@ -96,7 +96,6 @@ def run_pipeline(dataset_id: str, representation: str, load_strategy: str):
         data_stream = transformer.transform(tsv_path, representation)
 
         staging_table, rows_loaded = loader.bulk_load_staging(
-            dsd=dsd, # Pass DSD to loader
             table_name=table_name,
             schema=data_schema,
             data_stream=data_stream

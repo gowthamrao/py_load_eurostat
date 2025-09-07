@@ -6,7 +6,7 @@ establishing a contract that all concrete database loader implementations
 must adhere to.
 """
 from abc import ABC, abstractmethod
-from typing import Dict, Generator, Optional
+from typing import Dict, Generator, Optional, Tuple
 
 from ..models import DSD, Codelist, Observation, IngestionHistory
 
@@ -47,7 +47,7 @@ class LoaderInterface(ABC):
         schema: str,
         data_stream: Generator[Observation, None, None],
         use_unlogged_table: bool = True
-    ) -> str:
+    ) -> Tuple[str, int]:
         """
         Loads a stream of data into a new staging table using a native,
         high-performance bulk loading method (e.g., COPY).
@@ -60,7 +60,9 @@ class LoaderInterface(ABC):
                                 table for maximum ingestion speed.
 
         Returns:
-            The name of the created staging table.
+            A tuple containing:
+                - The name of the created staging table.
+                - The number of rows loaded.
         """
         pass
 
