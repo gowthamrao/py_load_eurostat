@@ -89,13 +89,28 @@ class PostgresLoader(LoaderInterface):
         logger.info(f"Table '{schema}.{table_name}' is ready.")
 
     def manage_codelists(self, codelists: Dict[str, Codelist], schema: str) -> None:
-        logger.info(f"Preparing {len(codelists)} codelist tables in schema '{schema}'")
+        logger.info(f"Loading {len(codelists)} codelists into schema '{schema}'")
         with self.conn.cursor() as cur:
             cur.execute(sql.SQL("CREATE SCHEMA IF NOT EXISTS {schema}").format(
                 schema=sql.Identifier(schema)
             ))
-            for cl_id in codelists:
+
+            def codelist_data_generator(codelist: Codelist) -> Generator[bytes, None, None]:
+                for item in codelist.items:
+                    row = (
+                        item.id,
+                        item.name_en,
+                        item.description_en,
+                        item.parent_id,
+                    )
+                    row_str = '\t'.join(str(v) if v is not None else '\\N' for v in row) + '\n'
+                    yield row_str.encode('utf-8')
+
+            for cl_id, codelist_obj in codelists.items():
                 cl_table_name = f"cl_{cl_id.lower()}"
+                staging_cl_table = f"staging_{cl_table_name}"
+
+                # Create the main table if it doesn't exist
                 cur.execute(sql.SQL("""
                 CREATE TABLE IF NOT EXISTS {schema}.{table} (
                     code TEXT PRIMARY KEY,
@@ -107,11 +122,39 @@ class PostgresLoader(LoaderInterface):
                     schema=sql.Identifier(schema),
                     table=sql.Identifier(cl_table_name)
                 ))
+
+                # Create a temporary staging table and load data into it
+                cur.execute(sql.SQL("CREATE TEMP TABLE {staging_table} (LIKE {schema}.{table})").format(
+                    staging_table=sql.Identifier(staging_cl_table),
+                    schema=sql.Identifier(schema),
+                    table=sql.Identifier(cl_table_name)
+                ))
+
+                copy_sql = sql.SQL("COPY {staging_table} FROM STDIN").format(staging_table=sql.Identifier(staging_cl_table))
+                with cur.copy(copy_sql) as copy:
+                    for data_chunk in codelist_data_generator(codelist_obj):
+                        copy.write(data_chunk)
+
+                logger.info(f"Loaded {cur.rowcount} rows into staging table for codelist '{cl_id}'")
+
+                # Atomically replace the contents of the main table
+                cur.execute(sql.SQL("""
+                BEGIN;
+                TRUNCATE {schema}.{table};
+                INSERT INTO {schema}.{table} SELECT * FROM {staging_table};
+                COMMIT;
+                """).format(
+                    schema=sql.Identifier(schema),
+                    table=sql.Identifier(cl_table_name),
+                    staging_table=sql.Identifier(staging_cl_table)
+                ))
+                cur.execute(sql.SQL("DROP TABLE {staging_table}").format(staging_table=sql.Identifier(staging_cl_table)))
+
         self.conn.commit()
-        logger.info("Codelist tables are ready.")
+        logger.info("Codelist loading complete.")
 
     def bulk_load_staging(
-        self, dsd: DSD, table_name: str, schema: str, data_stream: Generator[Observation, None, None], use_unlogged_table: bool = True
+        self, table_name: str, schema: str, data_stream: Generator[Observation, None, None], use_unlogged_table: bool = True
     ) -> Tuple[str, int]:
         if not self.dsd:
             raise RuntimeError("DSD must be set via prepare_schema before loading.")

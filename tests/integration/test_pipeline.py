@@ -61,6 +61,41 @@ def test_full_pipeline_run_happy_path(db_settings: DatabaseSettings, mocker):
 
 
 @pytest.mark.integration
+def test_codelist_loading(db_settings: DatabaseSettings, mocker):
+    """
+    Tests that codelists are correctly loaded into their metadata tables.
+    """
+    loader = PostgresLoader(db_settings)
+    dataset_id = "tps00001"
+    try:
+        # 1. Mock the fetcher
+        mocker.patch("py_load_eurostat.fetcher.Fetcher.get_dsd_xml", return_value=FIXTURES_DIR / "dsd_tps00001.xml")
+        mocker.patch("py_load_eurostat.fetcher.Fetcher.get_codelist_xml", return_value=FIXTURES_DIR / "codelist_geo.xml")
+        mocker.patch("py_load_eurostat.fetcher.Fetcher.get_dataset_tsv", return_value=FIXTURES_DIR / "tps00001.tsv.gz")
+        mocker.patch("py_load_eurostat.fetcher.Fetcher.get_toc_xml", return_value=FIXTURES_DIR / "sample_toc.xml")
+        mocker.patch.object(settings, 'db', db_settings)
+
+        # 2. Run the pipeline
+        run_pipeline(dataset_id=dataset_id, representation="Standard", load_strategy="Full")
+
+        # 3. Assert that the codelist table was populated
+        with loader.conn.cursor() as cur:
+            cur.execute("SELECT label_en FROM eurostat_meta.cl_geo WHERE code = 'FR';")
+            result = cur.fetchone()
+            assert result is not None
+            assert result[0] == "France"
+
+            cur.execute("SELECT label_en FROM eurostat_meta.cl_geo WHERE code = 'DE';")
+            result = cur.fetchone()
+            assert result is not None
+            assert result[0] == "Germany"
+
+    finally:
+        cleanup_db(loader, dataset_id)
+        loader.close_connection()
+
+
+@pytest.mark.integration
 def test_delta_load_logic(db_settings: DatabaseSettings, mocker):
     """
     Tests that the delta load strategy correctly skips up-to-date datasets
