@@ -6,13 +6,11 @@ transforms it into a clean, normalized (tidy) format, ready for loading.
 """
 import logging
 import re
-from pathlib import Path
-from typing import Dict, Generator, Tuple, Optional
+from typing import Dict, Generator, Optional, Tuple
 
 import pandas as pd
 
 from .models import DSD, Codelist, Observation
-from .parser import TsvParser
 
 logger = logging.getLogger(__name__)
 
@@ -80,40 +78,51 @@ class Transformer:
             return None, raw_value
 
     def transform(
-        self, tsv_path: Path, representation: str = "Standard"
+        self,
+        wide_df: pd.DataFrame,
+        dimension_cols: list[str],
+        time_period_cols: list[str],
+        representation: str = "Standard",
     ) -> Generator[Observation, None, None]:
         """
-        Creates a generator that yields transformed Observation objects.
+        Transforms a wide-format DataFrame into a generator of Observation objects.
 
-        This method streams data from the TsvParser (which already provides it
-        in a long format) and applies final transformations, such as value/flag
-        parsing and code-to-label replacement.
+        This method performs the unpivot (melt) operation and then applies
+        final transformations like value/flag parsing and code-to-label replacement.
 
         Args:
-            tsv_path: Path to the gzipped TSV data file.
-            representation: The desired output format, "Standard" (coded) or
-                            "Full" (labeled).
+            wide_df: The wide-format DataFrame from the TsvParser.
+            dimension_cols: A list of the dimension column names.
+            time_period_cols: A list of the time period column names.
+            representation: The desired output format, "Standard" or "Full".
 
         Yields:
             A stream of Observation Pydantic models.
         """
-        logger.info(f"Starting transformation for {tsv_path} with '{representation}' representation.")
-        parser = TsvParser(tsv_path)
+        logger.info(f"Starting transformation with '{representation}' representation.")
 
-        for raw_obs in parser:
-            # The parser now yields one observation per dictionary
+        # 1. Melt the dataframe to transform from wide to long format
+        long_df = wide_df.melt(
+            id_vars=dimension_cols,
+            value_vars=time_period_cols,
+            var_name='time_period',
+            value_name='value'
+        )
+
+        # 2. Drop rows with missing values
+        long_df.dropna(subset=['value'], inplace=True)
+
+        # 3. Iterate over the long-format DataFrame to yield Observations
+        for _, raw_obs in long_df.iterrows():
             obs_value, obs_flags = self._parse_value(raw_obs.get('value'))
 
-            # If both value and flags are None after parsing, it's an empty cell
             if obs_value is None and obs_flags is None:
                 continue
 
-            # Extract the dimension values from the raw observation
             base_dimensions = {
                 dim.id: raw_obs.get(dim.id) for dim in self.dsd.dimensions
             }
 
-            # Handle the data representation (Standard vs. Full)
             if representation.lower() == "full":
                 final_dimensions = {}
                 for dim_id, code_val in base_dimensions.items():
@@ -121,8 +130,8 @@ class Transformer:
                     if codelist and code_val in codelist.codes:
                         final_dimensions[dim_id] = codelist.codes[code_val].name
                     else:
-                        final_dimensions[dim_id] = code_val # Fallback to code
-            else: # Standard representation
+                        final_dimensions[dim_id] = code_val
+            else:
                 final_dimensions = base_dimensions
 
             yield Observation(
@@ -132,4 +141,4 @@ class Transformer:
                 flags=obs_flags,
             )
 
-        logger.info(f"Finished transformation for {tsv_path}.")
+        logger.info("Finished transformation.")

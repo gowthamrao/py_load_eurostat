@@ -2,10 +2,12 @@
 Pytest configuration and shared fixtures.
 """
 import os
+
 import pytest
 from testcontainers.postgres import PostgresContainer
 
 from py_load_eurostat.config import DatabaseSettings
+
 
 @pytest.fixture(scope="session", autouse=True)
 def mock_env():
