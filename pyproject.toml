@@ -76,3 +76,4 @@ addopts = "-ra -q --cov=src/py_load_eurostat --cov-report=term-missing"
 testpaths = [
     "tests",
 ]
+python_paths = "src"
