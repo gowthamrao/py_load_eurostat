@@ -5,6 +5,7 @@ This module defines the Abstract Base Class (ABC) for loaders,
 establishing a contract that all concrete database loader implementations
 must adhere to.
 """
+
 from abc import ABC, abstractmethod
 from typing import Dict, Generator, Optional, Tuple
 
@@ -47,7 +48,7 @@ class LoaderInterface(ABC):
         table_name: str,
         schema: str,
         data_stream: Generator[Observation, None, None],
-        use_unlogged_table: bool = True
+        use_unlogged_table: bool = True,
     ) -> Tuple[str, int]:
         """
         Loads a stream of data into a new staging table using a native,

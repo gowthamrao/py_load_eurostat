@@ -4,6 +4,7 @@ Transformer module for processing parsed Eurostat data.
 This module takes the raw, parsed data from the `parser` module and
 transforms it into a clean, normalized (tidy) format, ready for loading.
 """
+
 import logging
 import re
 from typing import Dict, Generator, Optional, Tuple
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 # Regex to separate a numeric value from optional trailing flags (non-digit characters)
 # It handles integers, floats, and scientific notation.
 VALUE_FLAG_RE = re.compile(r"^\s*(-?[\d.eE+-]+)\s*([a-zA-Z\s]*)\s*$")
+
 
 class Transformer:
     """
@@ -42,7 +44,9 @@ class Transformer:
             if dim.codelist_id in self.codelists
         }
 
-    def _parse_value(self, raw_value: Optional[str]) -> Tuple[Optional[float], Optional[str]]:
+    def _parse_value(
+        self, raw_value: Optional[str]
+    ) -> Tuple[Optional[float], Optional[str]]:
         """
         Parses a raw observation string, separating the numeric value from flags.
 

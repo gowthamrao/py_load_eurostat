@@ -1,6 +1,7 @@
 """
 Pytest configuration and shared fixtures.
 """
+
 import os
 
 import pytest
@@ -29,6 +30,7 @@ def postgres_container() -> PostgresContainer:
     """
     with PostgresContainer("postgres:16-alpine") as postgres:
         yield postgres
+
 
 @pytest.fixture
 def db_settings(postgres_container: PostgresContainer) -> DatabaseSettings:

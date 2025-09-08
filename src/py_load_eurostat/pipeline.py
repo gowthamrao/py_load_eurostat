@@ -4,6 +4,7 @@ The main pipeline orchestration module.
 This module brings together all the components (fetcher, parser, transformer,
 loader) to execute the end-to-end data ingestion process.
 """
+
 import logging
 import logging
 from datetime import datetime, timezone
@@ -19,9 +20,7 @@ from .transformer import Transformer
 logger = logging.getLogger(__name__)
 
 
-def run_pipeline(
-    dataset_id: str, representation: str, load_strategy: str
-) -> None:
+def run_pipeline(dataset_id: str, representation: str, load_strategy: str) -> None:
     """
     Orchestrates the end-to-end ingestion pipeline for a given dataset.
 
@@ -88,11 +87,10 @@ def run_pipeline(
         history_record.dsd_version = dsd.version
 
         codelist_ids = [dim.codelist_id for dim in dsd.dimensions if dim.codelist_id]
-        codelist_paths = {
-            cid: fetcher.get_codelist_xml(cid) for cid in codelist_ids
-        }
+        codelist_paths = {cid: fetcher.get_codelist_xml(cid) for cid in codelist_ids}
         codelists = {
-            cid: sdmx_parser.parse_codelist(path) for cid, path in codelist_paths.items()
+            cid: sdmx_parser.parse_codelist(path)
+            for cid, path in codelist_paths.items()
         }
 
         # 4. Prepare database schema

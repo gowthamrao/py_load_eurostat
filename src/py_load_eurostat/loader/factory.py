@@ -4,6 +4,7 @@ Factory module for creating database loader instances.
 This module provides a centralized way to instantiate the correct
 database loader based on the application's configuration.
 """
+
 from ..config import AppSettings, DatabaseType
 from .base import LoaderInterface
 from .postgresql import PostgresLoader

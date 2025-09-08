@@ -5,6 +5,7 @@ This test validates the loader's interaction with a real PostgreSQL database,
 ensuring that schema creation, bulk loading (COPY), and the atomic table
 swap logic in finalize_load work as expected.
 """
+
 import pytest
 from testcontainers.postgres import PostgresContainer
 from psycopg.rows import dict_row
@@ -131,9 +132,7 @@ def test_postgres_loader_end_to_end(
 
             # Check if backup table was dropped
             backup_table = f"{table_name}_old"
-            cur.execute(
-                "SELECT to_regclass(%s) as oid;", (f"{schema}.{backup_table}",)
-            )
+            cur.execute("SELECT to_regclass(%s) as oid;", (f"{schema}.{backup_table}",))
             result = cur.fetchone()
             # The backup table should definitely not exist and return a row
             assert result["oid"] is None

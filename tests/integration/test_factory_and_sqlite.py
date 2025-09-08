@@ -5,6 +5,7 @@ This test validates that the pipeline can be configured to use the
 SQLite loader via environment variables and that the loader works
 correctly from end-to-end.
 """
+
 import sqlite3
 from pathlib import Path
 
@@ -50,10 +51,18 @@ def test_full_pipeline_with_sqlite_via_factory(
 
     # 3. Mock the Fetcher to avoid network calls
     dataset_id = "tps00001"
-    mocker.patch.object(Fetcher, "get_toc", return_value=FIXTURES_DIR / "sample_toc.tsv")
-    mocker.patch.object(Fetcher, "get_dsd_xml", return_value=FIXTURES_DIR / "dsd_tps00001_simple.xml")
-    mocker.patch.object(Fetcher, "get_codelist_xml", return_value=FIXTURES_DIR / "codelist_geo.xml")
-    mocker.patch.object(Fetcher, "get_dataset_tsv", return_value=FIXTURES_DIR / f"{dataset_id}.tsv.gz")
+    mocker.patch.object(
+        Fetcher, "get_toc", return_value=FIXTURES_DIR / "sample_toc.tsv"
+    )
+    mocker.patch.object(
+        Fetcher, "get_dsd_xml", return_value=FIXTURES_DIR / "dsd_tps00001_simple.xml"
+    )
+    mocker.patch.object(
+        Fetcher, "get_codelist_xml", return_value=FIXTURES_DIR / "codelist_geo.xml"
+    )
+    mocker.patch.object(
+        Fetcher, "get_dataset_tsv", return_value=FIXTURES_DIR / f"{dataset_id}.tsv.gz"
+    )
 
     # 4. Run the pipeline
     pipeline.run_pipeline(
@@ -79,14 +88,16 @@ def test_full_pipeline_with_sqlite_via_factory(
 
             # Assert codelist table content (should be loaded regardless of representation)
             codelist_table_name = "eurostat_meta__cl_geo"
-            cur = conn.execute(f"SELECT label_en FROM {codelist_table_name} WHERE code = 'DE';")
+            cur = conn.execute(
+                f"SELECT label_en FROM {codelist_table_name} WHERE code = 'DE';"
+            )
             assert cur.fetchone()[0] == "Germany"
 
             # Assert ingestion history
             history_table_name = "eurostat_meta___ingestion_history"
             cur = conn.execute(
                 f"SELECT status, rows_loaded FROM {history_table_name} WHERE dataset_id = ?",
-                (dataset_id,)
+                (dataset_id,),
             )
             status, rows_loaded = cur.fetchone()
             assert status == "SUCCESS"

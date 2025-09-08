@@ -1,6 +1,7 @@
 """
 Unit tests for the parser module.
 """
+
 import pytest
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from pysdmx.model.code import Codelist as PysdmxCodelist, Code as PysdmxCode
 from pysdmx.model.message import Message
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
+
 
 def test_sdmx_parser_dsd(mocker):
     """
@@ -23,16 +25,37 @@ def test_sdmx_parser_dsd(mocker):
         name="Test DSD",
         agency="ESTAT",
         components=[
-            Component(id="GEO", required=True, role=Role.DIMENSION, concept="geo", local_codes="CL_GEO"),
-            Component(id="TIME_PERIOD", required=True, role=Role.DIMENSION, concept="time"),
-            Component(id="OBS_VALUE", required=True, role=Role.MEASURE, concept="obs_value"),
-                Component(id="OBS_FLAG", required=False, role=Role.ATTRIBUTE, concept="obs_flag", attachment_level="O"),
-        ]
+            Component(
+                id="GEO",
+                required=True,
+                role=Role.DIMENSION,
+                concept="geo",
+                local_codes="CL_GEO",
+            ),
+            Component(
+                id="TIME_PERIOD", required=True, role=Role.DIMENSION, concept="time"
+            ),
+            Component(
+                id="OBS_VALUE", required=True, role=Role.MEASURE, concept="obs_value"
+            ),
+            Component(
+                id="OBS_FLAG",
+                required=False,
+                role=Role.ATTRIBUTE,
+                concept="obs_flag",
+                attachment_level="O",
+            ),
+        ],
     )
     mock_message = Message(structures=[mock_pysdmx_dsd])
 
     # Mock the read_sdmx function to return our mock message
     mocker.patch("py_load_eurostat.parser.read_sdmx", return_value=mock_message)
+    # Also mock the XML parsing fallback to isolate the test
+    mocker.patch(
+        "py_load_eurostat.parser.SdmxParser._extract_codelist_map_from_xml",
+        return_value={"geo": "CL_GEO"},
+    )
 
     # 2. Act
     parser = SdmxParser()
@@ -49,6 +72,7 @@ def test_sdmx_parser_dsd(mocker):
     assert len(dsd.attributes) == 1
     assert dsd.attributes[0].id == "obs_flag"
 
+
 def test_sdmx_parser_codelist(mocker):
     """
     Tests that the SdmxParser correctly maps a pysdmx Codelist object to the
@@ -63,7 +87,7 @@ def test_sdmx_parser_codelist(mocker):
         items=[
             PysdmxCode(id="DE", name="Germany"),
             PysdmxCode(id="FR", name="France"),
-        ]
+        ],
     )
     mock_message = Message(structures=[mock_pysdmx_codelist])
     mocker.patch("py_load_eurostat.parser.read_sdmx", return_value=mock_message)
@@ -77,6 +101,7 @@ def test_sdmx_parser_codelist(mocker):
     assert len(codelist.codes) == 2
     assert "DE" in codelist.codes
     assert codelist.codes["DE"].name == "Germany"
+
 
 from datetime import datetime, timezone
 
@@ -99,14 +124,19 @@ def sample_toc_path(tmp_path: Path) -> Path:
     toc_file.write_text(content, encoding="utf-8")
     return toc_file
 
+
 def test_toc_parser(sample_toc_path: Path):
     """Tests that the TocParser correctly parses the TOC file."""
     parser = TocParser(sample_toc_path)
 
     # Test getting a valid download URL
-    expected_url = "https://ec.europa.eu/eurostat/api/dissemination/data/tps00001.tsv.gz"
+    expected_url = (
+        "https://ec.europa.eu/eurostat/api/dissemination/data/tps00001.tsv.gz"
+    )
     assert parser.get_download_url("tps00001") == expected_url
-    assert parser.get_download_url("TPS00001") == expected_url  # Test case-insensitivity
+    assert (
+        parser.get_download_url("TPS00001") == expected_url
+    )  # Test case-insensitivity
 
     # Test getting a non-existent dataset
     assert parser.get_download_url("non_existent_dataset") is None

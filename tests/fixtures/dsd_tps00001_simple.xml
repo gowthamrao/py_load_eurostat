@@ -14,11 +14,11 @@
           <structure:DimensionList>
             <structure:Dimension id="GEO" position="1">
               <structure:ConceptIdentity>
-                <Ref id="GEO" version="1.0" agencyID="ESTAT" package="conceptscheme" class="Concept" maintainableParentID="ESTAT_CONCEPTS" maintainableParentVersion="1.0"/>
+                <common:Ref id="GEO" version="1.0" agencyID="ESTAT" package="conceptscheme" class="Concept" maintainableParentID="ESTAT_CONCEPTS" maintainableParentVersion="1.0"/>
               </structure:ConceptIdentity>
               <structure:LocalRepresentation>
                 <structure:Enumeration>
-                  <Ref id="CL_GEO" version="1.0" agencyID="ESTAT" package="codelist" class="Codelist"/>
+                  <common:Ref id="CL_GEO" version="1.0" agencyID="ESTAT" package="codelist" class="Codelist"/>
                 </structure:Enumeration>
               </structure:LocalRepresentation>
             </structure:Dimension>
@@ -28,6 +28,11 @@
               <structure:ConceptIdentity>
                 <Ref id="OBS_FLAG" version="1.0" agencyID="ESTAT" package="conceptscheme" class="Concept" maintainableParentID="ESTAT_CONCEPTS" maintainableParentVersion="1.0"/>
               </structure:ConceptIdentity>
+              <structure:AttributeRelationship>
+                <structure:PrimaryMeasure>
+                  <Ref id="OBS_VALUE"/>
+                </structure:PrimaryMeasure>
+              </structure:AttributeRelationship>
               <structure:LocalRepresentation>
                 <structure:Enumeration>
                   <Ref id="CL_OBS_FLAG" version="1.0" agencyID="ESTAT" package="codelist" class="Codelist"/>

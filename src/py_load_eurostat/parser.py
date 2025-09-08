@@ -6,6 +6,7 @@ This module contains:
 - TsvParser: For parsing the unique structure of Eurostat TSV files.
 - InventoryParser: For parsing the bulk download inventory to find dataset update times.
 """
+
 import gzip
 import logging
 from datetime import datetime
@@ -66,12 +67,18 @@ class SdmxParser:
         attributes: list[Attribute] = []
         primary_measure_id = "obs_value"  # Default
 
+        # Hotfix: pysdmx does not seem to reliably expose the codelist reference
+        # on the component object when parsing from a file. We will parse the
+        # XML manually to extract this mapping as a fallback.
+        dim_to_cl_map = self._extract_codelist_map_from_xml(sdmx_path)
+
         for i, component in enumerate(dsd_node.components):
             if component.role == Role.DIMENSION:
+                dim_id_lower = component.id.lower()
                 dimensions.append(
                     Dimension(
-                        id=component.id.lower(),
-                        codelist_id=component.local_codes,
+                        id=dim_id_lower,
+                        codelist_id=dim_to_cl_map.get(dim_id_lower),
                         position=i,
                     )
                 )
@@ -94,6 +101,34 @@ class SdmxParser:
             attributes=attributes,
             primary_measure_id=primary_measure_id,
         )
+
+    def _extract_codelist_map_from_xml(self, sdmx_path: Path) -> Dict[str, str]:
+        """
+        Parses an SDMX-ML DSD file to extract the mapping between dimension IDs
+        and their associated codelist IDs.
+        """
+        import xml.etree.ElementTree as ET
+
+        tree = ET.parse(sdmx_path)
+        root = tree.getroot()
+        ns = {
+            "s": "http://www.sdmx.org/resources/sdmxml/schemas/v2_1/structure",
+            "c": "http://www.sdmx.org/resources/sdmxml/schemas/v2_1/common",
+        }
+
+        mapping = {}
+        # Find all Dimension elements within the DataStructure
+        for dim in root.findall(".//s:Dimension", ns):
+            dim_id = dim.get("id")
+            # Find the Codelist reference within the dimension
+            codelist_ref = dim.find(".//s:Enumeration/c:Ref", ns)
+            if dim_id and codelist_ref is not None:
+                codelist_id = codelist_ref.get("id")
+                if codelist_id:
+                    mapping[dim_id.lower()] = codelist_id
+
+        logger.debug(f"Extracted dimension-codelist map: {mapping}")
+        return mapping
 
     def parse_codelist(self, sdmx_path: Path) -> Codelist:
         """Parses a Codelist from an SDMX file."""
@@ -186,14 +221,13 @@ class TsvParser:
                 dims_df.columns = dimension_cols[: dims_df.shape[1]]
 
                 # Combine the new dimension columns with the time period data
-                processed_chunk = pd.concat(
-                    [dims_df, chunk[time_period_cols]], axis=1
-                )
+                processed_chunk = pd.concat([dims_df, chunk[time_period_cols]], axis=1)
                 logger.debug(f"Processed chunk {i} with {len(processed_chunk)} rows.")
                 yield processed_chunk
             logger.info("Finished streaming all chunks.")
 
         return chunk_processor(df_iterator), dimension_cols, time_period_cols
+
 
 class TocParser:
     """
@@ -202,6 +236,7 @@ class TocParser:
     The TOC provides metadata about all available bulk download files, including
     dataset codes, titles, update times, and download URLs.
     """
+
     def __init__(self, toc_path: Path):
         self.toc_path = toc_path
         self._toc_data: Dict[str, Dict] = {}
@@ -219,7 +254,7 @@ class TocParser:
                 next(f, None)
                 for line in f:
                     # Strip quotes and whitespace from each part
-                    parts = [p.strip().strip('"') for p in line.strip().split('\t')]
+                    parts = [p.strip().strip('"') for p in line.strip().split("\t")]
                     # The 'type' column (index 2) tells us if it's a downloadable dataset
                     if len(parts) < 7 or parts[2] not in ("table", "dataset"):
                         continue
@@ -235,16 +270,19 @@ class TocParser:
                         continue
 
                     self._toc_data[code.lower()] = {
-                        'url': f"https://ec.europa.eu/eurostat/api/dissemination{url_part}",
-                        'last_update': pd.to_datetime(parts[3], utc=True)
+                        "url": f"https://ec.europa.eu/eurostat/api/dissemination{url_part}",
+                        "last_update": pd.to_datetime(parts[3], utc=True),
                     }
-            logger.info(f"Successfully parsed {len(self._toc_data)} dataset entries from TOC.")
+            logger.info(
+                f"Successfully parsed {len(self._toc_data)} dataset entries from TOC."
+            )
         except FileNotFoundError:
             logger.error(f"TOC file not found at {self.toc_path}")
             raise
         except Exception as e:
-            logger.error(f"Failed to parse TOC file {self.toc_path}: {e}", exc_info=True)
-
+            logger.error(
+                f"Failed to parse TOC file {self.toc_path}: {e}", exc_info=True
+            )
 
     def get_last_update_timestamp(self, dataset_id: str) -> Optional[datetime]:
         """
@@ -257,7 +295,7 @@ class TocParser:
             A timezone-aware datetime object or None if the dataset is not found.
         """
         dataset_info = self._toc_data.get(dataset_id.lower())
-        return dataset_info['last_update'] if dataset_info else None
+        return dataset_info["last_update"] if dataset_info else None
 
     def get_download_url(self, dataset_id: str) -> Optional[str]:
         """
@@ -270,4 +308,4 @@ class TocParser:
             The full download URL string or None if not found.
         """
         dataset_info = self._toc_data.get(dataset_id.lower())
-        return dataset_info['url'] if dataset_info else None
+        return dataset_info["url"] if dataset_info else None

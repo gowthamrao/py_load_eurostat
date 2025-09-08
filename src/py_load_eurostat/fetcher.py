@@ -6,6 +6,7 @@ This module provides a Fetcher class that handles:
 - Caching downloaded files to the filesystem to avoid redundant requests.
 - Resiliently retrying failed requests with exponential backoff.
 """
+
 import logging
 from pathlib import Path
 
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 # Base URL for the Eurostat API
 EUROSTAT_API_BASE_URL = "https://ec.europa.eu/eurostat/api/dissemination"
+
 
 class Fetcher:
     """
