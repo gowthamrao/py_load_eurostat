@@ -79,19 +79,21 @@ class Transformer:
 
     def transform(
         self,
-        wide_df: pd.DataFrame,
+        wide_df_iterator: Generator[pd.DataFrame, None, None],
         dimension_cols: list[str],
         time_period_cols: list[str],
         representation: str = "Standard",
     ) -> Generator[Observation, None, None]:
         """
-        Transforms a wide-format DataFrame into a generator of Observation objects.
+        Transforms a stream of wide-format DataFrames into a generator of
+        Observation objects.
 
-        This method performs the unpivot (melt) operation and then applies
-        final transformations like value/flag parsing and code-to-label replacement.
+        This method processes each chunk from the iterator, performs the
+        unpivot (melt) operation, and then applies final transformations
+        like value/flag parsing and code-to-label replacement.
 
         Args:
-            wide_df: The wide-format DataFrame from the TsvParser.
+            wide_df_iterator: An iterator yielding wide-format DataFrames (chunks).
             dimension_cols: A list of the dimension column names.
             time_period_cols: A list of the time period column names.
             representation: The desired output format, "Standard" or "Full".
@@ -101,44 +103,44 @@ class Transformer:
         """
         logger.info(f"Starting transformation with '{representation}' representation.")
 
-        # 1. Melt the dataframe to transform from wide to long format
-        long_df = wide_df.melt(
-            id_vars=dimension_cols,
-            value_vars=time_period_cols,
-            var_name='time_period',
-            value_name='value'
-        )
-
-        # 2. Drop rows with missing values
-        long_df.dropna(subset=['value'], inplace=True)
-
-        # 3. Iterate over the long-format DataFrame to yield Observations
-        for _, raw_obs in long_df.iterrows():
-            obs_value, obs_flags = self._parse_value(raw_obs.get('value'))
-
-            if obs_value is None and obs_flags is None:
-                continue
-
-            base_dimensions = {
-                dim.id: raw_obs.get(dim.id) for dim in self.dsd.dimensions
-            }
-
-            if representation.lower() == "full":
-                final_dimensions = {}
-                for dim_id, code_val in base_dimensions.items():
-                    codelist = self.dim_to_codelist_map.get(dim_id)
-                    if codelist and code_val in codelist.codes:
-                        final_dimensions[dim_id] = codelist.codes[code_val].name
-                    else:
-                        final_dimensions[dim_id] = code_val
-            else:
-                final_dimensions = base_dimensions
-
-            yield Observation(
-                dimensions=final_dimensions,
-                time_period=raw_obs.get('time_period'),
-                value=obs_value,
-                flags=obs_flags,
+        for chunk in wide_df_iterator:
+            # 1. Melt the chunk to transform from wide to long format
+            long_df = chunk.melt(
+                id_vars=dimension_cols,
+                value_vars=time_period_cols,
+                var_name="time_period",
+                value_name="value",
             )
 
+            # 2. Drop rows with missing values
+            long_df.dropna(subset=["value"], inplace=True)
+
+            # 3. Iterate over the long-format chunk to yield Observations
+            for _, raw_obs in long_df.iterrows():
+                obs_value, obs_flags = self._parse_value(raw_obs.get("value"))
+
+                if obs_value is None and obs_flags is None:
+                    continue
+
+                base_dimensions = {
+                    dim.id: raw_obs.get(dim.id) for dim in self.dsd.dimensions
+                }
+
+                if representation.lower() == "full":
+                    final_dimensions = {}
+                    for dim_id, code_val in base_dimensions.items():
+                        codelist = self.dim_to_codelist_map.get(dim_id)
+                        if codelist and code_val in codelist.codes:
+                            final_dimensions[dim_id] = codelist.codes[code_val].name
+                        else:
+                            final_dimensions[dim_id] = code_val
+                else:
+                    final_dimensions = base_dimensions
+
+                yield Observation(
+                    dimensions=final_dimensions,
+                    time_period=raw_obs.get("time_period"),
+                    value=obs_value,
+                    flags=obs_flags,
+                )
         logger.info("Finished transformation.")

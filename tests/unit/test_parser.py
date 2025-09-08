@@ -1,32 +1,80 @@
 """
 Unit tests for the parser module.
 """
+import pytest
 from pathlib import Path
 
 from py_load_eurostat.parser import SdmxParser
+from pysdmx.model.dataflow import Component, DataStructureDefinition, Role
+from pysdmx.model.code import Codelist as PysdmxCodelist, Code as PysdmxCode
+from pysdmx.model.message import Message
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
-def test_sdmx_parser_dsd():
-    """Tests that the SdmxParser correctly parses a DSD from a dataflow file."""
-    parser = SdmxParser()
-    dsd_path = FIXTURES_DIR / "dsd_tps00001.xml"
-    dsd = parser.parse_dsd_from_dataflow(dsd_path)
+def test_sdmx_parser_dsd(mocker):
+    """
+    Tests that the SdmxParser correctly maps a pysdmx DSD object to the
+    internal DSD model.
+    """
+    # 1. Arrange: Create mock pysdmx objects
+    mock_pysdmx_dsd = DataStructureDefinition(
+        id="DSD_ID",
+        version="1.0",
+        name="Test DSD",
+        agency="ESTAT",
+        components=[
+            Component(id="GEO", required=True, role=Role.DIMENSION, concept="geo", local_codes="CL_GEO"),
+            Component(id="TIME_PERIOD", required=True, role=Role.DIMENSION, concept="time"),
+            Component(id="OBS_VALUE", required=True, role=Role.MEASURE, concept="obs_value"),
+                Component(id="OBS_FLAG", required=False, role=Role.ATTRIBUTE, concept="obs_flag", attachment_level="O"),
+        ]
+    )
+    mock_message = Message(structures=[mock_pysdmx_dsd])
 
-    assert dsd.id == "dsd_tps00001"
-    assert len(dsd.dimensions) == 1
+    # Mock the read_sdmx function to return our mock message
+    mocker.patch("py_load_eurostat.parser.read_sdmx", return_value=mock_message)
+
+    # 2. Act
+    parser = SdmxParser()
+    # The path doesn't matter anymore because read_sdmx is mocked
+    dsd = parser.parse_dsd_from_dataflow(Path("dummy_path.xml"))
+
+    # 3. Assert
+    assert dsd.id == "dsd_id"
+    assert len(dsd.dimensions) == 2
     assert dsd.dimensions[0].id == "geo"
     assert dsd.dimensions[0].codelist_id == "CL_GEO"
+    assert dsd.dimensions[1].id == "time_period"
     assert dsd.primary_measure_id == "obs_value"
+    assert len(dsd.attributes) == 1
+    assert dsd.attributes[0].id == "obs_flag"
 
-def test_sdmx_parser_codelist():
-    """Tests that the SdmxParser correctly parses a Codelist file."""
+def test_sdmx_parser_codelist(mocker):
+    """
+    Tests that the SdmxParser correctly maps a pysdmx Codelist object to the
+    internal Codelist model.
+    """
+    # 1. Arrange: Create mock pysdmx objects
+    mock_pysdmx_codelist = PysdmxCodelist(
+        id="CL_GEO",
+        version="1.0",
+        name="Geopolitical entities",
+        agency="ESTAT",
+        items=[
+            PysdmxCode(id="DE", name="Germany"),
+            PysdmxCode(id="FR", name="France"),
+        ]
+    )
+    mock_message = Message(structures=[mock_pysdmx_codelist])
+    mocker.patch("py_load_eurostat.parser.read_sdmx", return_value=mock_message)
+
+    # 2. Act
     parser = SdmxParser()
-    codelist_path = FIXTURES_DIR / "codelist_geo.xml"
-    codelist = parser.parse_codelist(codelist_path)
+    codelist = parser.parse_codelist(Path("dummy_path.xml"))
 
+    # 3. Assert
     assert codelist.id == "CL_GEO"
-    assert len(codelist.codes) == 3
+    assert len(codelist.codes) == 2
     assert "DE" in codelist.codes
     assert codelist.codes["DE"].name == "Germany"
 

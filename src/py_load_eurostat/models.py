@@ -30,7 +30,7 @@ class Codelist(BaseModel):
 class Dimension(BaseModel):
     """Represents a dimension in an SDMX Data Structure Definition (DSD)."""
     id: str = Field(description="The unique ID of the dimension (e.g., 'GEO').")
-    codelist_id: str = Field(description="The ID of the code list associated with this dimension.")
+    codelist_id: Optional[str] = Field(default=None, description="The ID of the code list associated with this dimension, if any.")
     position: int = Field(description="The order of the dimension in the dataset's key.")
 
 class Attribute(BaseModel):

@@ -103,13 +103,13 @@ def run_pipeline(
         logger.info(f"Fetching dataset TSV from {download_url}...")
         tsv_path = fetcher.get_dataset_tsv(dataset_id, download_url)
         tsv_parser = TsvParser(tsv_path)
-        wide_df, dim_cols, time_cols = tsv_parser.parse()
+        wide_df_iterator, dim_cols, time_cols = tsv_parser.parse()
 
         # 6. Transform and Load data
         logger.info("Initializing transformation and loading...")
         transformer = Transformer(dsd, codelists)
         data_stream = transformer.transform(
-            wide_df, dim_cols, time_cols, representation
+            wide_df_iterator, dim_cols, time_cols, representation
         )
 
         staging_table, rows_loaded = loader.bulk_load_staging(
