@@ -5,6 +5,7 @@ This module provides a concrete implementation of the LoaderInterface for
 PostgreSQL, leveraging the `psycopg` library and the high-performance
 `COPY` command for data ingestion.
 """
+
 import logging
 from typing import Dict, Generator, Optional, Tuple
 
@@ -46,35 +47,112 @@ class PostgresLoader(LoaderInterface):
             logger.error(f"Failed to connect to PostgreSQL: {e}")
             raise
 
+    def _get_required_columns(self, dsd: DSD) -> Dict[str, str]:
+        """Generates a dictionary of required columns and their SQL types from a DSD."""
+        obs_flag_col_name = next(
+            (attr.id for attr in dsd.attributes if "FLAG" in attr.id.upper()),
+            "obs_flags",
+        )
+        columns = {dim.id: "TEXT" for dim in dsd.dimensions}
+        columns["time_period"] = "TEXT"
+        columns[dsd.primary_measure_id] = "DOUBLE PRECISION"
+        columns[obs_flag_col_name] = "TEXT"
+        return columns
+
+    def _table_exists(self, table_name: str, schema: str, cur: psycopg.Cursor) -> bool:
+        """Checks if a table exists in the given schema."""
+        query = sql.SQL("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables
+                WHERE table_schema = %s AND table_name = %s
+            );
+        """)
+        cur.execute(query, (schema, table_name))
+        return cur.fetchone()[0]
+
+    def _get_existing_columns(
+        self, table_name: str, schema: str, cur: psycopg.Cursor
+    ) -> set[str]:
+        """Retrieves the set of existing column names for a given table."""
+        query = sql.SQL("""
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = %s AND table_name = %s;
+        """)
+        cur.execute(query, (schema, table_name))
+        return {row[0] for row in cur.fetchall()}
+
     def prepare_schema(self, dsd: DSD, table_name: str, schema: str) -> None:
         self.dsd = dsd
         logger.info(f"Preparing schema '{schema}' and table '{table_name}'")
 
         with self.conn.cursor() as cur:
-            cur.execute(sql.SQL("CREATE SCHEMA IF NOT EXISTS {schema}").format(
-                schema=sql.Identifier(schema)
-            ))
-
-            obs_flag_col_name = next(
-                (attr.id for attr in dsd.attributes if "FLAG" in attr.id.upper()),
-                "obs_flags",
-            )
-            cols = [f'"{dim.id}" TEXT' for dim in dsd.dimensions]
-            cols.append('"time_period" TEXT')
-            cols.append(f'"{dsd.primary_measure_id}" DOUBLE PRECISION')
-            cols.append(f'"{obs_flag_col_name}" TEXT')
-
-            pk_cols = [f'"{dim.id}"' for dim in dsd.dimensions] + ['"time_period"']
-            pk_constraint = f"PRIMARY KEY ({', '.join(pk_cols)})"
-            cols.append(pk_constraint)
-
             cur.execute(
-                sql.SQL("CREATE TABLE IF NOT EXISTS {schema}.{table} ({cols})").format(
-                    schema=sql.Identifier(schema),
-                    table=sql.Identifier(table_name),
-                    cols=sql.SQL(", ").join(sql.SQL(c) for c in cols),
+                sql.SQL("CREATE SCHEMA IF NOT EXISTS {schema}").format(
+                    schema=sql.Identifier(schema)
                 )
             )
+
+            required_columns = self._get_required_columns(dsd)
+
+            if not self._table_exists(table_name, schema, cur):
+                logger.info(
+                    f"Table '{schema}.{table_name}' does not exist. Creating..."
+                )
+                col_defs = [
+                    sql.SQL("{} {}").format(sql.Identifier(name), sql.SQL(dtype))
+                    for name, dtype in required_columns.items()
+                ]
+                pk_cols = [dim.id for dim in dsd.dimensions] + ["time_period"]
+                pk_constraint = sql.SQL("PRIMARY KEY ({})").format(
+                    sql.SQL(", ").join(map(sql.Identifier, pk_cols))
+                )
+                col_defs.append(pk_constraint)
+
+                create_sql = sql.SQL("CREATE TABLE {schema}.{table} ({cols})").format(
+                    schema=sql.Identifier(schema),
+                    table=sql.Identifier(table_name),
+                    cols=sql.SQL(", ").join(col_defs),
+                )
+                cur.execute(create_sql)
+                logger.info(f"Table '{schema}.{table_name}' created successfully.")
+            else:
+                logger.info(
+                    f"Table '{schema}.{table_name}' already exists. "
+                    "Checking for schema evolution."
+                )
+                existing_columns = self._get_existing_columns(table_name, schema, cur)
+                missing_columns = set(required_columns.keys()) - existing_columns
+                extra_columns = existing_columns - set(required_columns.keys())
+
+                if missing_columns:
+                    for col_name in missing_columns:
+                        col_type = required_columns[col_name]
+                        logger.info(
+                            f"Adding missing column '{col_name}' "
+                            f"with type '{col_type}' to table '{table_name}'."
+                        )
+                        alter_sql = sql.SQL(
+                            "ALTER TABLE {schema}.{table} "
+                            "ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+                        ).format(
+                            schema=sql.Identifier(schema),
+                            table=sql.Identifier(table_name),
+                            col_name=sql.Identifier(col_name),
+                            col_type=sql.SQL(col_type),
+                        )
+                        cur.execute(alter_sql)
+                    logger.info("Finished adding missing columns.")
+                else:
+                    logger.info("No missing columns to add. Schema is up-to-date.")
+
+                if extra_columns:
+                    logger.warning(
+                        f"The following columns exist in the database but are no "
+                        f"longer in the DSD for '{table_name}': {extra_columns}. "
+                        "These columns will not be dropped automatically."
+                    )
+
         self.conn.commit()
         logger.info(f"Table '{schema}.{table_name}' is ready.")
 
@@ -179,9 +257,11 @@ class PostgresLoader(LoaderInterface):
         unlogged_str = "UNLOGGED" if use_unlogged_table else ""
 
         with self.conn.cursor() as cur:
-            cur.execute(sql.SQL("DROP TABLE IF EXISTS {schema}.{table}").format(
-                schema=sql.Identifier(schema), table=sql.Identifier(staging_table)
-            ))
+            cur.execute(
+                sql.SQL("DROP TABLE IF EXISTS {schema}.{table}").format(
+                    schema=sql.Identifier(schema), table=sql.Identifier(staging_table)
+                )
+            )
             cur.execute(
                 sql.SQL(
                     "CREATE {unlogged} TABLE {schema}.{staging_table} "
@@ -195,14 +275,18 @@ class PostgresLoader(LoaderInterface):
             )
         logger.info(f"Created staging table: {schema}.{staging_table}")
 
-        dim_order = [d.id for d in sorted(self.dsd.dimensions, key=lambda x: x.position)]
+        dim_order = [
+            d.id for d in sorted(self.dsd.dimensions, key=lambda x: x.position)
+        ]
         obs_flag_col_name = next(
             (attr.id for attr in self.dsd.attributes if "FLAG" in attr.id.upper()),
             "obs_flags",
         )
-        copy_columns = (
-            dim_order + ["time_period", self.dsd.primary_measure_id, obs_flag_col_name]
-        )
+        copy_columns = dim_order + [
+            "time_period",
+            self.dsd.primary_measure_id,
+            obs_flag_col_name,
+        ]
 
         def data_generator_for_copy(
             stream: Generator[Observation, None, None],
@@ -225,7 +309,7 @@ class PostgresLoader(LoaderInterface):
             copy_sql = sql.SQL("COPY {schema}.{table} ({columns}) FROM STDIN").format(
                 schema=sql.Identifier(schema),
                 table=sql.Identifier(staging_table),
-                columns=sql.SQL(',').join(map(sql.Identifier, copy_columns))
+                columns=sql.SQL(",").join(map(sql.Identifier, copy_columns)),
             )
             with cur.copy(copy_sql) as copy:
                 for data_chunk in copy_gen:
@@ -306,10 +390,13 @@ class PostgresLoader(LoaderInterface):
 
         with self.conn.cursor() as cur:
             # Ensure schema and history table exist before trying to insert
-            cur.execute(sql.SQL("CREATE SCHEMA IF NOT EXISTS {schema}").format(
-                schema=sql.Identifier(schema)
-            ))
-            cur.execute(sql.SQL("""
+            cur.execute(
+                sql.SQL("CREATE SCHEMA IF NOT EXISTS {schema}").format(
+                    schema=sql.Identifier(schema)
+                )
+            )
+            cur.execute(
+                sql.SQL("""
             CREATE TABLE IF NOT EXISTS {schema}.{table} (
                 ingestion_id SERIAL PRIMARY KEY,
                 dataset_id TEXT NOT NULL,
@@ -324,9 +411,10 @@ class PostgresLoader(LoaderInterface):
                 error_details TEXT
             );
             """).format(
-                schema=sql.Identifier(schema),
-                table=sql.Identifier(history_table_name)
-            ))
+                    schema=sql.Identifier(schema),
+                    table=sql.Identifier(history_table_name),
+                )
+            )
 
             # Exclude ingestion_id from the insert, as it's a SERIAL column
             record_dict = record.model_dump(exclude={"ingestion_id"})

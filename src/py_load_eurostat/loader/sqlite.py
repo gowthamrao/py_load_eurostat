@@ -30,7 +30,7 @@ class SQLiteLoader(LoaderInterface):
     def _create_connection(self) -> sqlite3.Connection:
         """Establishes and returns a new database connection."""
         try:
-            # Using autocommit mode; transactions are handled explicitly.
+            # We will manage transactions manually.
             conn = sqlite3.connect(self.db_path, isolation_level=None)
             logger.info(f"Successfully connected to SQLite database: '{self.db_path}'")
             return conn
@@ -45,65 +45,108 @@ class SQLiteLoader(LoaderInterface):
         """
         return f"{schema}__{table_name}"
 
+    def _get_required_columns(self, dsd: DSD) -> Dict[str, str]:
+        """Generates a dictionary of required columns and their SQL types from a DSD."""
+        obs_flag_col_name = next(
+            (attr.id for attr in dsd.attributes if "FLAG" in attr.id.upper()),
+            "obs_flags",
+        )
+        columns = {dim.id: "TEXT" for dim in dsd.dimensions}
+        columns["time_period"] = "TEXT"
+        columns[dsd.primary_measure_id] = "REAL"
+        columns[obs_flag_col_name] = "TEXT"
+        return columns
+
+    def _table_exists(self, table_fqn: str, cur: sqlite3.Cursor) -> bool:
+        """Checks if a table exists."""
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_fqn,))
+        return cur.fetchone() is not None
+
+    def _get_existing_columns(self, table_fqn: str, cur: sqlite3.Cursor) -> set[str]:
+        """Retrieves the set of existing column names for a given table."""
+        cur.execute(f"PRAGMA table_info({table_fqn});")
+        return {row[1] for row in cur.fetchall()}
+
     def prepare_schema(self, dsd: DSD, table_name: str, schema: str) -> None:
         self.dsd = dsd
         table_fqn = self._fqn(schema, table_name)
         logger.info(f"Preparing table '{table_fqn}'")
 
-        with self.conn:
-            self.conn.execute("BEGIN")
-            try:
-                obs_flag_col_name = next(
-                    (attr.id for attr in dsd.attributes if "FLAG" in attr.id.upper()),
-                    "obs_flags",
-                )
-                cols = [f'"{dim.id}" TEXT' for dim in dsd.dimensions]
-                cols.append('"time_period" TEXT')
-                cols.append(f'"{dsd.primary_measure_id}" REAL')
-                cols.append(f'"{obs_flag_col_name}" TEXT')
+        cur = self.conn.cursor()
+        try:
+            cur.execute("BEGIN")
+            required_columns = self._get_required_columns(dsd)
 
+            if not self._table_exists(table_fqn, cur):
+                logger.info(f"Table '{table_fqn}' does not exist. Creating...")
+                col_defs = [f'"{name}" {dtype}' for name, dtype in required_columns.items()]
                 pk_cols = [f'"{dim.id}"' for dim in dsd.dimensions] + ['"time_period"']
-                cols.append(f"PRIMARY KEY ({', '.join(pk_cols)})")
+                pk_constraint = f"PRIMARY KEY ({', '.join(pk_cols)})"
+                col_defs.append(pk_constraint)
 
-                self.conn.execute(
-                    f"CREATE TABLE IF NOT EXISTS {table_fqn} ({', '.join(cols)})"
-                )
-                self.conn.execute("COMMIT")
-            except Exception:
-                self.conn.execute("ROLLBACK")
-                raise
+                create_sql = f"CREATE TABLE {table_fqn} ({', '.join(col_defs)})"
+                cur.execute(create_sql)
+                logger.info(f"Table '{table_fqn}' created successfully.")
+            else:
+                logger.info(f"Table '{table_fqn}' exists. Checking for schema evolution.")
+                existing_columns = self._get_existing_columns(table_fqn, cur)
+                missing_columns = set(required_columns.keys()) - existing_columns
+
+                if missing_columns:
+                    for col_name in missing_columns:
+                        col_type = required_columns[col_name]
+                        logger.info(f"Adding missing column '{col_name}' to '{table_fqn}'.")
+                        alter_sql = f'ALTER TABLE {table_fqn} ADD COLUMN "{col_name}" {col_type}'
+                        cur.execute(alter_sql)
+                    logger.info("Finished adding missing columns.")
+                else:
+                    logger.info("No missing columns to add. Schema is up-to-date.")
+
+            cur.execute("COMMIT")
+        except Exception:
+            cur.execute("ROLLBACK")
+            raise
+        finally:
+            cur.close()
         logger.info(f"Table '{table_fqn}' is ready.")
 
     def manage_codelists(self, codelists: Dict[str, Codelist], schema: str) -> None:
         logger.info(f"Loading {len(codelists)} codelists into schema '{schema}'")
-        try:
-            with self.conn:
-                for cl_id, codelist_obj in codelists.items():
-                    cl_table_fqn = self._fqn(schema, cl_id.lower())
-                    self.conn.execute(
-                        f"""
-                    CREATE TABLE IF NOT EXISTS {cl_table_fqn} (
-                        code TEXT PRIMARY KEY,
-                        label_en TEXT,
-                        description_en TEXT,
-                        parent_code TEXT
-                    );
-                    """
-                    )
-                    if not codelist_obj.codes:
-                        continue
-                    rows = [
-                        (item.id, item.name, item.description, item.parent_id)
-                        for item in codelist_obj.codes.values()
-                    ]
-                    # Use INSERT OR REPLACE for simple, idempotent upserts.
-                    self.conn.executemany(
-                        f"INSERT OR REPLACE INTO {cl_table_fqn} VALUES (?, ?, ?, ?)",
-                        rows,
-                    )
-        except sqlite3.Error as e:
-            logger.error(f"Error during codelist loading: {e}")
-            raise
+        for cl_id, codelist_obj in codelists.items():
+            cl_table_fqn = self._fqn(schema, cl_id.lower())
+            cur = self.conn.cursor()
+            try:
+                cur.execute("BEGIN")
+                cur.execute(
+                    f"""
+                CREATE TABLE IF NOT EXISTS {cl_table_fqn} (
+                    code TEXT PRIMARY KEY,
+                    label_en TEXT,
+                    description_en TEXT,
+                    parent_code TEXT
+                );
+                """
+                )
+                if not codelist_obj.codes:
+                    logger.warning(f"Codelist '{cl_id}' has no codes to load.")
+                    continue
+
+                rows = [
+                    (item.id, item.name, item.description, item.parent_id)
+                    for item in codelist_obj.codes.values()
+                ]
+                cur.executemany(
+                    f"INSERT OR REPLACE INTO {cl_table_fqn} (code, label_en, description_en, parent_code) VALUES (?, ?, ?, ?)",
+                    rows,
+                )
+                logger.info(f"Successfully loaded {len(rows)} codes for '{cl_id}'.")
+                cur.execute("COMMIT")
+            except sqlite3.Error as e:
+                logger.error(f"Error loading codelist '{cl_id}': {e}", exc_info=True)
+                cur.execute("ROLLBACK")
+                raise
+            finally:
+                cur.close()
         logger.info("Codelist loading complete.")
 
     def bulk_load_staging(
@@ -119,44 +162,46 @@ class SQLiteLoader(LoaderInterface):
         main_table_fqn = self._fqn(schema, table_name)
         staging_table = f"staging_{main_table_fqn}"
 
-        with self.conn:
-            self.conn.execute("BEGIN")
-            try:
-                # Re-create the staging table each time
-                self.conn.execute(f"DROP TABLE IF EXISTS {staging_table}")
-                res = self.conn.execute(
-                    f"SELECT sql FROM sqlite_master WHERE name='{main_table_fqn}'"
-                )
-                create_sql = res.fetchone()
-                if not create_sql:
-                    raise RuntimeError(f"Could not find DDL for main table '{main_table_fqn}'")
+        cur = self.conn.cursor()
+        try:
+            cur.execute("BEGIN")
+            # Re-create the staging table each time
+            cur.execute(f"DROP TABLE IF EXISTS {staging_table}")
+            res = cur.execute(
+                f"SELECT sql FROM sqlite_master WHERE name='{main_table_fqn}'"
+            )
+            create_sql = res.fetchone()
+            if not create_sql:
+                raise RuntimeError(f"Could not find DDL for main table '{main_table_fqn}'")
 
-                self.conn.execute(create_sql[0].replace(main_table_fqn, staging_table))
+            cur.execute(create_sql[0].replace(main_table_fqn, staging_table))
 
-                dim_order = [d.id for d in sorted(self.dsd.dimensions, key=lambda x: x.position)]
-                obs_flag_col_name = next(
-                    (attr.id for attr in self.dsd.attributes if "FLAG" in attr.id.upper()), "obs_flags"
-                )
+            dim_order = [d.id for d in sorted(self.dsd.dimensions, key=lambda x: x.position)]
+            obs_flag_col_name = next(
+                (attr.id for attr in self.dsd.attributes if "FLAG" in attr.id.upper()), "obs_flags"
+            )
 
-                def data_generator(stream: Generator[Observation, None, None]) -> Generator[tuple, None, None]:
-                    for obs in stream:
-                        row_data = [obs.dimensions.get(dim_id) for dim_id in dim_order]
-                        row_data.extend([obs.time_period, obs.value, obs.flags])
-                        yield tuple(row_data)
+            def data_generator(stream: Generator[Observation, None, None]) -> Generator[tuple, None, None]:
+                for obs in stream:
+                    row_data = [obs.dimensions.get(dim_id) for dim_id in dim_order]
+                    row_data.extend([obs.time_period, obs.value, obs.flags])
+                    yield tuple(row_data)
 
-                col_names = dim_order + ["time_period", self.dsd.primary_measure_id, obs_flag_col_name]
-                placeholders = ", ".join(["?"] * len(col_names))
-                sql = (
-                    f"INSERT INTO {staging_table} ({', '.join(f'`{c}`' for c in col_names)})"
-                    f" VALUES ({placeholders})"
-                )
+            col_names = dim_order + ["time_period", self.dsd.primary_measure_id, obs_flag_col_name]
+            placeholders = ", ".join(["?"] * len(col_names))
+            sql = (
+                f"INSERT INTO {staging_table} ({', '.join(f'`{c}`' for c in col_names)})"
+                f" VALUES ({placeholders})"
+            )
 
-                cursor = self.conn.executemany(sql, data_generator(data_stream))
-                row_count = cursor.rowcount
-                self.conn.execute("COMMIT")
-            except Exception:
-                self.conn.execute("ROLLBACK")
-                raise
+            cursor = cur.executemany(sql, data_generator(data_stream))
+            row_count = cursor.rowcount
+            cur.execute("COMMIT")
+        except Exception:
+            cur.execute("ROLLBACK")
+            raise
+        finally:
+            cur.close()
 
         logger.info(f"Finished loading (executemany). Loaded {row_count} rows.")
         return staging_table, row_count
@@ -165,15 +210,17 @@ class SQLiteLoader(LoaderInterface):
         target_fqn = self._fqn(schema, target_table)
         logger.info(f"Finalizing load from '{staging_table}' to '{target_fqn}'.")
 
-        with self.conn:
-            self.conn.execute("BEGIN")
-            try:
-                self.conn.execute(f"DROP TABLE IF EXISTS {target_fqn}")
-                self.conn.execute(f"ALTER TABLE {staging_table} RENAME TO {target_fqn}")
-                self.conn.execute("COMMIT")
-            except Exception:
-                self.conn.execute("ROLLBACK")
-                raise
+        cur = self.conn.cursor()
+        try:
+            cur.execute("BEGIN")
+            cur.execute(f"DROP TABLE IF EXISTS {target_fqn}")
+            cur.execute(f"ALTER TABLE {staging_table} RENAME TO {target_fqn}")
+            cur.execute("COMMIT")
+        except Exception:
+            cur.execute("ROLLBACK")
+            raise
+        finally:
+            cur.close()
         logger.info("Load finalized successfully.")
 
     def get_ingestion_state(self, dataset_id: str, schema: str) -> Optional[IngestionHistory]:
@@ -200,28 +247,30 @@ class SQLiteLoader(LoaderInterface):
         history_table_fqn = self._fqn(schema, "_ingestion_history")
         logger.info(f"Saving ingestion state for dataset '{record.dataset_id}'")
 
-        with self.conn:
-            self.conn.execute("BEGIN")
-            try:
-                self.conn.execute(f"""
-                CREATE TABLE IF NOT EXISTS {history_table_fqn} (
-                    ingestion_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    dataset_id TEXT NOT NULL, dsd_version TEXT, load_strategy TEXT,
-                    representation TEXT, status TEXT, start_time TEXT, end_time TEXT,
-                    rows_loaded INTEGER, source_last_update TEXT, error_details TEXT
-                );
-                """)
-                record_dict = record.model_dump(mode="json", exclude={"ingestion_id"})
-                field_names = ", ".join(record_dict.keys())
-                placeholders = ", ".join(["?"] * len(record_dict))
-                self.conn.execute(
-                    f"INSERT INTO {history_table_fqn} ({field_names}) VALUES ({placeholders})",
-                    list(record_dict.values()),
-                )
-                self.conn.execute("COMMIT")
-            except Exception:
-                self.conn.execute("ROLLBACK")
-                raise
+        cur = self.conn.cursor()
+        try:
+            cur.execute("BEGIN")
+            cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS {history_table_fqn} (
+                ingestion_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                dataset_id TEXT NOT NULL, dsd_version TEXT, load_strategy TEXT,
+                representation TEXT, status TEXT, start_time TEXT, end_time TEXT,
+                rows_loaded INTEGER, source_last_update TEXT, error_details TEXT
+            );
+            """)
+            record_dict = record.model_dump(mode="json", exclude={"ingestion_id"})
+            field_names = ", ".join(record_dict.keys())
+            placeholders = ", ".join(["?"] * len(record_dict))
+            cur.execute(
+                f"INSERT INTO {history_table_fqn} ({field_names}) VALUES ({placeholders})",
+                list(record_dict.values()),
+            )
+            cur.execute("COMMIT")
+        except Exception:
+            cur.execute("ROLLBACK")
+            raise
+        finally:
+            cur.close()
 
     def close_connection(self) -> None:
         if self.conn:

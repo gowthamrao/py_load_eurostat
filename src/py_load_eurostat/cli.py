@@ -3,6 +3,7 @@ Command-line interface for the py-load-eurostat application.
 
 This module uses Typer to create a CLI for running the ingestion pipeline.
 """
+
 import logging
 
 import typer
@@ -17,17 +18,17 @@ app = typer.Typer(
 
 # Define common options as Annotated types for reuse and clarity
 DatasetIDOption = typer.Option(
-    ..., # ... means this is a required option
+    ...,  # ... means this is a required option
     "--dataset-id",
     "-d",
-    help="The Eurostat dataset identifier (e.g., 'nama_10_gdp')."
+    help="The Eurostat dataset identifier (e.g., 'nama_10_gdp').",
 )
 
 RepresentationOption = typer.Option(
     "Standard",
     "--representation",
     "-r",
-    help="The data representation: 'Standard' (coded) or 'Full' (labeled)."
+    help="The data representation: 'Standard' (coded) or 'Full' (labeled).",
 )
 
 LoadStrategyOption = typer.Option(
@@ -73,6 +74,7 @@ def run(
         logging.error(f"A critical error occurred: {e}", exc_info=True)
         typer.secho(f"Pipeline for {dataset_id} failed.", fg=typer.colors.RED)
         raise typer.Exit(code=1)
+
 
 if __name__ == "__main__":
     app()
