@@ -76,4 +76,8 @@ addopts = "-ra -q --cov=src/py_load_eurostat --cov-report=term-missing"
 testpaths = [
     "tests",
 ]
-python_paths = "src"
+# python_paths is not a standard option and raises a warning, using PYTHONPATH instead
+# python_paths = "src"
+markers = [
+    "integration: marks tests as integration tests",
+]

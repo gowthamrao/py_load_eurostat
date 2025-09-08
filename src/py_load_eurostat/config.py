@@ -4,11 +4,18 @@ Configuration module for the py-load-eurostat package.
 This module uses pydantic-settings to manage application configuration,
 allowing settings to be loaded from environment variables or a .env file.
 """
+from enum import Enum
 from pathlib import Path
 from typing import Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class DatabaseType(str, Enum):
+    """Enumeration for the supported database types."""
+    POSTGRES = "postgres"
+    SQLITE = "sqlite"
 
 
 class DatabaseSettings(BaseSettings):
@@ -53,6 +60,10 @@ class AppSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix='PY_LOAD_EUROSTAT_',
         env_nested_delimiter='__'
+    )
+    db_type: DatabaseType = Field(
+        default=DatabaseType.POSTGRES,
+        description="The type of database to connect to.",
     )
     db: DatabaseSettings = Field(default_factory=DatabaseSettings)
     cache: CacheSettings = Field(default_factory=CacheSettings)

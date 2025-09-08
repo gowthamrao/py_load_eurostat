@@ -11,7 +11,7 @@ from typing import Optional
 
 from .config import settings
 from .fetcher import Fetcher
-from .loader.postgresql import PostgresLoader
+from .loader.factory import get_loader
 from .models import IngestionHistory, IngestionStatus
 from .parser import SdmxParser, TocParser, TsvParser
 from .transformer import Transformer
@@ -40,7 +40,8 @@ def run_pipeline(
         # 1. Initialize components
         fetcher = Fetcher(settings)
         sdmx_parser = SdmxParser()
-        loader = PostgresLoader(settings.db)
+        loader = get_loader(settings)
+        logger.info(f"Using '{settings.db_type.value}' database loader.")
 
         # 2. Fetch TOC and check for updates
         logger.info("Fetching Table of Contents...")
