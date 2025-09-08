@@ -8,158 +8,171 @@ This module contains:
 """
 import gzip
 import logging
-import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Generator, Iterator, List, Optional, Tuple
 
 import pandas as pd
+from pysdmx.io import read_sdmx
+from pysdmx.model.code import Codelist as PysdmxCodelist
+from pysdmx.model.dataflow import (
+    Component,
+    DataStructureDefinition as PysdmxDSD,
+    Role,
+)
 
 from .models import DSD, Attribute, Code, Codelist, Dimension
 
 logger = logging.getLogger(__name__)
 
-class SdmxParser:
-    """Parses SDMX-ML files for DSDs and Codelists using manual XML parsing."""
 
-    def _get_ns(self):
-        return {
-            'm': 'http://www.sdmx.org/resources/sdmxml/schemas/v2_1/message',
-            's': 'http://www.sdmx.org/resources/sdmxml/schemas/v2_1/structure',
-            'c': 'http://www.sdmx.org/resources/sdmxml/schemas/v2_1/common',
-            'xml': 'http://www.w3.org/XML/1998/namespace',
-        }
+class SdmxParser:
+    """Parses SDMX-ML files for DSDs and Codelists using the pysdmx library."""
 
     def parse_dsd_from_dataflow(self, sdmx_path: Path) -> DSD:
         """Parses a DSD from a dataflow SDMX file."""
-        logger.info(f"Parsing DSD from {sdmx_path}")
-        tree = ET.parse(sdmx_path)
-        root = tree.getroot()
-        ns = self._get_ns()
+        logger.info(f"Parsing DSD from {sdmx_path} using pysdmx")
+        message = read_sdmx(sdmx_path, validate=False)
 
-        dsd_node = root.find('.//s:DataStructureDefinition', ns)
-        if dsd_node is None:
-            raise ValueError("No DataStructureDefinition found in the file")
+        if not message.structures:
+            raise ValueError("No structures found in the SDMX message")
 
-        dimensions = [
-            Dimension(
-                id=dim.attrib['id'].lower(),
-                codelist_id=dim.find('.//s:Representation/Ref', ns).attrib['id'],
-                position=int(dim.attrib['position'])
-            )
-            for dim in dsd_node.findall('.//s:Dimension', ns)
-        ]
+        dsd_node: PysdmxDSD = message.structures[0]
+        if not isinstance(dsd_node, PysdmxDSD):
+            raise TypeError(f"Expected DataStructureDefinition, but got {type(dsd_node)}")
 
-        attributes = [
-            Attribute(
-                id=attr.attrib['id'].lower(),
-                codelist_id=getattr(attr.find('.//s:Representation/Ref', ns), 'attrib', {}).get('id')
-            )
-            for attr in dsd_node.findall('.//s:Attribute', ns)
-        ]
+        dimensions: list[Dimension] = []
+        attributes: list[Attribute] = []
+        primary_measure_id = "obs_value"  # Default
 
-        measure = dsd_node.find('.//s:PrimaryMeasure', ns)
+        for i, component in enumerate(dsd_node.components):
+            if component.role == Role.DIMENSION:
+                dimensions.append(
+                    Dimension(
+                        id=component.id.lower(),
+                        codelist_id=component.local_codes,
+                        position=i,
+                    )
+                )
+            elif component.role == Role.ATTRIBUTE:
+                attributes.append(
+                    Attribute(
+                        id=component.id.lower(),
+                        codelist_id=component.enumeration.id
+                        if component.enumeration
+                        else None,
+                    )
+                )
+            elif component.role == Role.MEASURE:
+                primary_measure_id = component.id.lower()
 
         return DSD(
-            id=dsd_node.attrib['id'].lower(),
-            version=dsd_node.attrib['version'],
+            id=dsd_node.id.lower(),
+            version=dsd_node.version,
             dimensions=sorted(dimensions, key=lambda d: d.position),
             attributes=attributes,
-            primary_measure_id=measure.attrib['id'].lower() if measure is not None else 'obs_value',
+            primary_measure_id=primary_measure_id,
         )
 
     def parse_codelist(self, sdmx_path: Path) -> Codelist:
         """Parses a Codelist from an SDMX file."""
-        logger.info(f"Parsing Codelist from {sdmx_path}")
-        tree = ET.parse(sdmx_path)
-        root = tree.getroot()
-        ns = self._get_ns()
+        logger.info(f"Parsing Codelist from {sdmx_path} using pysdmx")
+        message = read_sdmx(sdmx_path, validate=False)
+        if not message.structures:
+            raise ValueError("No structures found in the SDMX message")
 
-        cl_node = root.find('.//s:Codelist', ns)
-        if cl_node is None:
-            raise ValueError("No Codelist found in the file")
+        cl_node = message.structures[0]
+        if not isinstance(cl_node, PysdmxCodelist):
+            raise TypeError(f"Expected Codelist, but got {type(cl_node)}")
 
         codes = {}
-        for code_node in cl_node.findall('.//s:Code', ns):
-            name_node = code_node.find('c:Name[@xml:lang="en"]', ns)
-            name = name_node.text if name_node is not None else code_node.attrib['id']
-
-            desc_node = code_node.find('c:Description[@xml:lang="en"]', ns)
-            description = desc_node.text if desc_node is not None else None
-
-            code_id = code_node.attrib['id']
-            codes[code_id] = Code(
-                id=code_id,
-                name=name,
-                description=description,
-                parent_id=code_node.attrib.get('parentCode')
+        for item in cl_node.items:
+            codes[item.id] = Code(
+                id=item.id,
+                name=item.name,
+                description=item.description,
+                parent_id=None,
             )
 
         return Codelist(
-            id=cl_node.attrib['id'],
-            version=cl_node.attrib['version'],
+            id=cl_node.id,
+            version=cl_node.version,
             codes=codes,
         )
 
-from typing import Tuple
+
+CHUNK_SIZE = 100_000
 
 
 class TsvParser:
     """
-    Parses a Eurostat gzipped TSV file, returning the raw data in a wide
-    format DataFrame and the parsed dimension/time columns.
+    Parses a Eurostat gzipped TSV file in a memory-efficient, streaming manner.
     """
+
     def __init__(self, tsv_path: Path):
         self.tsv_path = tsv_path
 
-    def parse(self) -> Tuple[pd.DataFrame, List[str], List[str]]:
+    def parse(
+        self,
+    ) -> Tuple[Iterator[pd.DataFrame], List[str], List[str]]:
         """
-        Parses the TSV file into a pandas DataFrame without transformation.
+        Parses the TSV file, yielding chunks of data as pandas DataFrames.
+
+        This method reads the header to determine the column structure and then
+        streams the rest of the file in chunks to keep memory usage low.
 
         Returns:
             A tuple containing:
-            - The raw data in a wide DataFrame.
+            - An iterator yielding wide-format DataFrames (chunks).
             - A list of the dimension column names.
             - A list of the time period column names.
         """
         # 1. Read header line to get dimension and time period columns
-        with gzip.open(self.tsv_path, 'rt', encoding='utf-8') as f:
+        with gzip.open(self.tsv_path, "rt", encoding="utf-8") as f:
             header_line = f.readline().strip()
 
-        header_parts = header_line.split('\t')
+        header_parts = header_line.split("\t")
         dim_header = header_parts[0]
-        dimension_cols = [d.strip() for d in dim_header.split(',')]
-        # Clean up the `geo\time` part
-        if dimension_cols and '\\' in dimension_cols[-1]:
-            last_dim_parts = dimension_cols[-1].split('\\')
+        dimension_cols = [d.strip() for d in dim_header.split(",")]
+        if dimension_cols and "\\" in dimension_cols[-1]:
+            last_dim_parts = dimension_cols[-1].split("\\")
             dimension_cols[-1] = last_dim_parts[0]
-            # The part after the slash is the name of the time dimension itself
-            time_dim_name = last_dim_parts[1] if len(last_dim_parts) > 1 else 'time'
-        else:
-            time_dim_name = 'time' # Fallback name
 
         time_period_cols = [p.strip() for p in header_parts[1:]]
 
-        # 2. Read the data using pandas, using the parsed header
-        df = pd.read_csv(
+        # 2. Create a streaming reader (iterator) for the data
+        df_iterator = pd.read_csv(
             self.tsv_path,
-            compression='gzip',
-            sep='\t',
+            compression="gzip",
+            sep="\t",
             header=0,
-            na_values=[': ', ':']
+            na_values=[": ", ":"],
+            chunksize=CHUNK_SIZE,
         )
-        df.rename(columns={df.columns[0]: 'dimensions_combined'}, inplace=True)
 
-        # 3. Split the combined dimension column into separate columns
-        dims_df = df['dimensions_combined'].str.split(',', expand=True)
-        # Assign names to the new dimension columns, ensuring we don't overrun
-        dims_df.columns = dimension_cols[:dims_df.shape[1]]
+        # 3. Define a generator to process each chunk
+        def chunk_processor(
+            iterator: Iterator[pd.DataFrame],
+        ) -> Generator[pd.DataFrame, None, None]:
+            logger.info(f"Begin streaming chunks from {self.tsv_path}")
+            for i, chunk in enumerate(iterator):
+                # Rename the first column which contains all dimensions
+                chunk.rename(
+                    columns={chunk.columns[0]: "dimensions_combined"}, inplace=True
+                )
+                # Split the combined dimension column into separate columns
+                dims_df = chunk["dimensions_combined"].str.split(",", expand=True)
+                dims_df.columns = dimension_cols[: dims_df.shape[1]]
 
-        # 4. Combine the new dimension columns with the time period data
-        raw_wide_df = pd.concat([dims_df, df[time_period_cols]], axis=1)
+                # Combine the new dimension columns with the time period data
+                processed_chunk = pd.concat(
+                    [dims_df, chunk[time_period_cols]], axis=1
+                )
+                logger.debug(f"Processed chunk {i} with {len(processed_chunk)} rows.")
+                yield processed_chunk
+            logger.info("Finished streaming all chunks.")
 
-        logger.info(f"Parsed {self.tsv_path} into a wide DataFrame with {len(raw_wide_df)} rows.")
-        return raw_wide_df, dimension_cols, time_period_cols
+        return chunk_processor(df_iterator), dimension_cols, time_period_cols
 
 class TocParser:
     """
