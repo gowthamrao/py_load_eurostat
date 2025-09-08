@@ -4,7 +4,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from py_load_eurostat.loader.sqlite import SqliteLoader
+from py_load_eurostat.config import DatabaseSettings
+from py_load_eurostat.loader.sqlite import SQLiteLoader
 from py_load_eurostat.models import (
     DSD,
     Attribute,
@@ -66,72 +67,62 @@ def sample_data_stream():
     return _generator()
 
 
-class TestSqliteLoader:
-    def test_full_load_cycle_in_memory(self, sample_dsd, sample_codelists, sample_data_stream):
+@pytest.fixture
+def db_settings(tmp_path: Path) -> DatabaseSettings:
+    """Fixture to create DatabaseSettings pointing to a temporary file."""
+    db_file = tmp_path / "test_unit.db"
+    return DatabaseSettings(name=str(db_file))
+
+
+class TestSQLiteLoader:
+    def test_full_load_cycle(
+        self, db_settings, sample_dsd, sample_codelists, sample_data_stream
+    ):
         """
-        Tests the full data loading cycle using an in-memory SQLite database.
-        This specifically tests the executemany() fallback path.
+        Tests the full data loading cycle using the refactored SQLite loader.
         """
-        loader = SqliteLoader(db_name=":memory:")
-        schema = "eurostat_data"
+        loader = SQLiteLoader(db_settings)
+        data_schema = "eurostat_data"
+        meta_schema = "eurostat_meta"
         table_name = "sample_table"
+        data_table_fqn = f"{data_schema}__{table_name}"
+        codelist_table_fqn = f"{meta_schema}__cl_geo"
 
-        # 1. Prepare Schema
-        loader.prepare_schema(sample_dsd, table_name, schema)
+        try:
+            # 1. Prepare Schema
+            loader.prepare_schema(sample_dsd, table_name, data_schema)
+            conn = loader.conn
+            res = conn.execute(
+                f"SELECT name FROM sqlite_master WHERE type='table' AND name='{data_table_fqn}'"
+            )
+            assert res.fetchone() is not None
 
-        # Assert schema was created
-        conn = loader.conn
-        res = conn.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{schema}_{table_name}'")
-        assert res.fetchone() is not None
+            # 2. Manage Codelists
+            loader.manage_codelists(sample_codelists, meta_schema)
+            res = conn.execute(f"SELECT COUNT(*) FROM {codelist_table_fqn}").fetchone()
+            assert res[0] == 2
+            res = conn.execute(
+                f"SELECT label_en FROM {codelist_table_fqn} WHERE code='DE'"
+            ).fetchone()
+            assert res[0] == "Germany"
 
-        # 2. Manage Codelists
-        loader.manage_codelists(sample_codelists, "eurostat_meta")
+            # 3. Bulk Load Staging
+            staging_table, row_count = loader.bulk_load_staging(
+                table_name, data_schema, sample_data_stream
+            )
+            assert row_count == 2
+            assert staging_table == f"staging_{data_table_fqn}"
+            res = conn.execute(f"SELECT COUNT(*) FROM {staging_table}").fetchone()
+            assert res[0] == 2
 
-        # Assert codelists loaded
-        res = conn.execute("SELECT COUNT(*) FROM eurostat_meta_cl_geo").fetchone()
-        assert res[0] == 2
-        res = conn.execute("SELECT label_en FROM eurostat_meta_cl_geo WHERE code='DE'").fetchone()
-        assert res[0] == "Germany"
+            # 4. Finalize Load
+            loader.finalize_load(staging_table, table_name, data_schema)
+            res = conn.execute(f"SELECT COUNT(*) FROM {data_table_fqn}").fetchone()
+            assert res[0] == 2
+            res = conn.execute(
+                f"SELECT name FROM sqlite_master WHERE type='table' AND name='{staging_table}'"
+            )
+            assert res.fetchone() is None
 
-        # 3. Bulk Load Staging
-        staging_table, row_count = loader.bulk_load_staging(table_name, schema, sample_data_stream)
-        assert row_count == 2
-        assert staging_table == f"staging_{schema}_{table_name}"
-
-        # Assert data is in staging table
-        res = conn.execute(f"SELECT COUNT(*) FROM {staging_table}").fetchone()
-        assert res[0] == 2
-
-        # 4. Finalize Load
-        loader.finalize_load(staging_table, table_name, schema)
-
-        # Assert data is in final table and staging table is gone
-        res = conn.execute(f"SELECT COUNT(*) FROM {schema}_{table_name}").fetchone()
-        assert res[0] == 2
-        res = conn.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{staging_table}'")
-        assert res.fetchone() is None
-
-        loader.close_connection()
-
-    def test_bulk_load_with_file_db(self, tmp_path, sample_dsd, sample_data_stream):
-        """
-        Tests the bulk loading mechanism using a file-based database to ensure
-        the subprocess/CLI import path is triggered and works correctly.
-        """
-        db_file = tmp_path / "test.db"
-        loader = SqliteLoader(db_name=str(db_file))
-        schema = "eurostat_data"
-        table_name = "sample_table"
-
-        loader.prepare_schema(sample_dsd, table_name, schema)
-
-        staging_table, row_count = loader.bulk_load_staging(table_name, schema, sample_data_stream)
-        assert row_count == 2
-
-        # Manually connect to verify data
-        conn = sqlite3.connect(db_file)
-        res = conn.execute(f"SELECT COUNT(*) FROM {staging_table}").fetchone()
-        assert res[0] == 2
-        conn.close()
-
-        loader.close_connection()
+        finally:
+            loader.close_connection()
