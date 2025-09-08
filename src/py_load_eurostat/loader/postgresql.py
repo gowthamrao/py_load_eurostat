@@ -49,29 +49,10 @@ class PostgresLoader(LoaderInterface):
     def prepare_schema(self, dsd: DSD, table_name: str, schema: str) -> None:
         self.dsd = dsd
         logger.info(f"Preparing schema '{schema}' and table '{table_name}'")
-        history_table_name = "_ingestion_history"
 
         with self.conn.cursor() as cur:
             cur.execute(sql.SQL("CREATE SCHEMA IF NOT EXISTS {schema}").format(
                 schema=sql.Identifier(schema)
-            ))
-            cur.execute(sql.SQL("""
-            CREATE TABLE IF NOT EXISTS {schema}.{table} (
-                ingestion_id SERIAL PRIMARY KEY,
-                dataset_id TEXT NOT NULL,
-                dsd_version TEXT,
-                load_strategy TEXT,
-                representation TEXT,
-                status TEXT,
-                start_time TIMESTAMPTZ,
-                end_time TIMESTAMPTZ,
-                rows_loaded BIGINT,
-                source_last_update TIMESTAMPTZ,
-                error_details TEXT
-            );
-            """).format(
-                schema=sql.Identifier(schema),
-                table=sql.Identifier(history_table_name)
             ))
 
             obs_flag_col_name = next(
@@ -291,7 +272,32 @@ class PostgresLoader(LoaderInterface):
             f"Saving ingestion state for dataset '{record.dataset_id}' "
             f"with status '{record.status}'"
         )
+        history_table_name = "_ingestion_history"
+
         with self.conn.cursor() as cur:
+            # Ensure schema and history table exist before trying to insert
+            cur.execute(sql.SQL("CREATE SCHEMA IF NOT EXISTS {schema}").format(
+                schema=sql.Identifier(schema)
+            ))
+            cur.execute(sql.SQL("""
+            CREATE TABLE IF NOT EXISTS {schema}.{table} (
+                ingestion_id SERIAL PRIMARY KEY,
+                dataset_id TEXT NOT NULL,
+                dsd_version TEXT,
+                load_strategy TEXT,
+                representation TEXT,
+                status TEXT,
+                start_time TIMESTAMPTZ,
+                end_time TIMESTAMPTZ,
+                rows_loaded BIGINT,
+                source_last_update TIMESTAMPTZ,
+                error_details TEXT
+            );
+            """).format(
+                schema=sql.Identifier(schema),
+                table=sql.Identifier(history_table_name)
+            ))
+
             # Exclude ingestion_id from the insert, as it's a SERIAL column
             record_dict = record.model_dump(exclude={"ingestion_id"})
 
