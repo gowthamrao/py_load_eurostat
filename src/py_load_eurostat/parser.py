@@ -37,9 +37,30 @@ class SdmxParser:
         if not message.structures:
             raise ValueError("No structures found in the SDMX message")
 
-        dsd_node: PysdmxDSD = message.structures[0]
+        # A structure message can contain a DSD directly or a Dataflow that
+        # refers to a DSD. The parser must handle both cases.
+
+        # 1. Try to find a DSD directly in the message structures.
+        dsd_node = next(
+            (s for s in message.structures if isinstance(s, PysdmxDSD)), None
+        )
+
+        # 2. If no direct DSD, try to find it via a Dataflow reference.
+        if not dsd_node:
+            if hasattr(message, "dataflow") and message.dataflow:
+                # Take the first dataflow found
+                dataflow = list(message.dataflow.values())[0]
+                dsd_node = dataflow.structure
+            else:
+                # Fallback for messages that might just contain structures
+                # but not a dataflow attribute. This is a bit of a guess.
+                pass
+
         if not isinstance(dsd_node, PysdmxDSD):
-            raise TypeError(f"Expected DataStructureDefinition, but got {type(dsd_node)}")
+            raise TypeError(
+                "Could not find a valid DataStructureDefinition in the SDMX message, "
+                "either directly or referenced from a Dataflow."
+            )
 
         dimensions: list[Dimension] = []
         attributes: list[Attribute] = []
