@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from py_load_eurostat.models import DSD, Dimension
+from py_load_eurostat.models import DSD, Code, Codelist, Dimension
 from py_load_eurostat.transformer import Transformer
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
@@ -78,3 +78,46 @@ def test_transformer_transform(mock_dsd):
     # Ensure the missing value for FR in 2022 was not included
     fr_2022 = next((obs for obs in observations if obs.dimensions.get("geo") == "FR" and obs.time_period == "2022"), None)
     assert fr_2022 is None
+
+
+def test_transformer_transform_full_representation(mock_dsd):
+    """Tests the transform method with 'Full' representation to ensure codes are replaced by labels."""
+    # 1. Setup: Create mock codelists
+    geo_codelist = Codelist(
+        id="CL_GEO",
+        version="1.0",
+        codes={
+            "DE": Code(id="DE", name="Germany", description="Federal Republic of Germany"),
+            "FR": Code(id="FR", name="France", description="French Republic"),
+        },
+    )
+    mock_codelists = {"CL_GEO": geo_codelist}
+
+    # Parse the file to get the wide dataframe
+    tsv_path = FIXTURES_DIR / "tps00001.tsv.gz"
+    parser = TsvParser(tsv_path)
+    wide_df, dim_cols, time_cols = parser.parse()
+
+    # 2. Execution: Transform with "Full" representation
+    transformer = Transformer(dsd=mock_dsd, codelists=mock_codelists)
+    observations = list(
+        transformer.transform(
+            wide_df, dim_cols, time_cols, representation="Full"
+        )
+    )
+
+    # 3. Assertions
+    assert len(observations) == 5
+
+    # Spot-check that the 'geo' dimension now contains labels instead of codes
+    de_2022 = next((obs for obs in observations if obs.dimensions.get("geo") == "Germany" and obs.time_period == "2022"), None)
+    assert de_2022 is not None
+    assert de_2022.value == 12.5
+
+    fr_2021 = next((obs for obs in observations if obs.dimensions.get("geo") == "France" and obs.time_period == "2021"), None)
+    assert fr_2021 is not None
+    assert fr_2021.value == 8.2
+
+    # Check that a code that wasn't in the codelist is passed through unchanged
+    eu_obs = next((obs for obs in observations if obs.dimensions.get("geo") == "EU27_2020"), None)
+    assert eu_obs is not None
