@@ -66,7 +66,7 @@ def run_pipeline(
         history_record.source_last_update = remote_last_update
 
         if load_strategy.lower() == "delta":
-            last_ingestion = loader.get_ingestion_state(dataset_id, data_schema)
+            last_ingestion = loader.get_ingestion_state(dataset_id, meta_schema)
             if (
                 last_ingestion
                 and last_ingestion.source_last_update
@@ -138,7 +138,7 @@ def run_pipeline(
         # 8. Save final ingestion state and close connections
         if loader and history_record:
             try:
-                loader.save_ingestion_state(history_record, data_schema)
+                loader.save_ingestion_state(history_record, meta_schema)
             except Exception as db_e:
                 logger.error(f"CRITICAL: Failed to save final ingestion state: {db_e}")
             loader.close_connection()

@@ -180,7 +180,7 @@ class TocParser:
         """
         logger.info(f"Loading and parsing Table of Contents file: {self.toc_path}")
         try:
-            with open(self.toc_path, "r", encoding="utf-8") as f:
+            with open(self.toc_path, "r", encoding="utf-8-sig") as f:
                 # Skip header line
                 next(f, None)
                 for line in f:

@@ -37,25 +37,8 @@ class SqliteLoader(LoaderInterface):
         self.dsd = dsd
         # SQLite doesn't have schemas, so we prepend the schema to the table name
         data_table_fqn = f"{schema}_{table_name}"
-        history_table_fqn = f"{schema}__ingestion_history"
 
         with self.conn:
-            self.conn.execute(f"""
-            CREATE TABLE IF NOT EXISTS {history_table_fqn} (
-                ingestion_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                dataset_id TEXT NOT NULL,
-                dsd_version TEXT,
-                load_strategy TEXT,
-                representation TEXT,
-                status TEXT,
-                start_time TEXT,
-                end_time TEXT,
-                rows_loaded INTEGER,
-                source_last_update TEXT,
-                error_details TEXT
-            );
-            """)
-
             obs_flag_col_name = next(
                 (attr.id for attr in dsd.attributes if "FLAG" in attr.id.upper()),
                 "obs_flags",
@@ -156,13 +139,65 @@ class SqliteLoader(LoaderInterface):
         logger.info("Load finalized successfully.")
 
 
-    def get_ingestion_state(self, dataset_id: str, schema: str) -> Optional[IngestionHistory]:
-        # This is a simplified implementation for the test.
+    def get_ingestion_state(
+        self, dataset_id: str, schema: str
+    ) -> Optional[IngestionHistory]:
+        history_table_fqn = f"{schema}__ingestion_history"
+        self.conn.row_factory = sqlite3.Row
+
+        with self.conn:
+            cursor = self.conn.execute(
+                f"SELECT * FROM {history_table_fqn} "
+                "WHERE dataset_id = ? AND status = 'SUCCESS' "
+                "ORDER BY end_time DESC LIMIT 1;",
+                (dataset_id,),
+            )
+            row = cursor.fetchone()
+
+        # Reset row_factory to default if necessary, or manage contextually
+        self.conn.row_factory = None
+
+        if row:
+            # Manually convert row to dict to pass to Pydantic model
+            return IngestionHistory(**dict(row))
         return None
 
-    def save_ingestion_state(self, history_record: IngestionHistory, schema: str) -> None:
-        # This is a simplified implementation for the test.
-        pass
+    def save_ingestion_state(self, record: IngestionHistory, schema: str) -> None:
+        history_table_fqn = f"{schema}__ingestion_history"
+
+        with self.conn:
+            self.conn.execute(f"""
+            CREATE TABLE IF NOT EXISTS {history_table_fqn} (
+                ingestion_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                dataset_id TEXT NOT NULL,
+                dsd_version TEXT,
+                load_strategy TEXT,
+                representation TEXT,
+                status TEXT,
+                start_time TEXT,
+                end_time TEXT,
+                rows_loaded INTEGER,
+                source_last_update TEXT,
+                error_details TEXT
+            );
+            """)
+
+        # Pydantic model converts datetimes to strings automatically
+        record_dict = record.model_dump(exclude={"ingestion_id"})
+
+        # Convert Enum to string
+        record_dict["status"] = record_dict["status"].value
+
+        field_names = list(record_dict.keys())
+        placeholders = ", ".join(["?"] * len(field_names))
+        values = list(record_dict.values())
+
+        with self.conn:
+            self.conn.execute(
+                f"INSERT INTO {history_table_fqn} ({', '.join(field_names)}) "
+                f"VALUES ({placeholders})",
+                values,
+            )
 
     def close_connection(self) -> None:
         if self.conn:
