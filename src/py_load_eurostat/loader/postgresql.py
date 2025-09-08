@@ -80,79 +80,89 @@ class PostgresLoader(LoaderInterface):
 
     def manage_codelists(self, codelists: Dict[str, Codelist], schema: str) -> None:
         logger.info(f"Loading {len(codelists)} codelists into schema '{schema}'")
+
+        def codelist_data_generator(
+            codelist: Codelist,
+        ) -> Generator[bytes, None, None]:
+            for item in codelist.codes.values():
+                row = (item.id, item.name, item.description, item.parent_id)
+                row_str = (
+                    "\t".join(str(v) if v is not None else "\\N" for v in row) + "\n"
+                )
+                yield row_str.encode("utf-8")
+
         with self.conn.cursor() as cur:
-            cur.execute(sql.SQL("CREATE SCHEMA IF NOT EXISTS {schema}").format(
-                schema=sql.Identifier(schema)
-            ))
+            cur.execute(
+                sql.SQL("CREATE SCHEMA IF NOT EXISTS {schema}").format(
+                    schema=sql.Identifier(schema)
+                )
+            )
 
-            def codelist_data_generator(
-                codelist: Codelist,
-            ) -> Generator[bytes, None, None]:
-                for item in codelist.codes.values():
-                    row = (item.id, item.name, item.description, item.parent_id)
-                    row_str = (
-                        "\t".join(str(v) if v is not None else "\\N" for v in row)
-                        + "\n"
+        for cl_id, codelist_obj in codelists.items():
+            cl_table_name = cl_id.lower()
+            staging_cl_table = f"staging_{cl_table_name}"
+
+            with self.conn.transaction():
+                with self.conn.cursor() as cur:
+                    # Create the main table if it doesn't exist
+                    cur.execute(
+                        sql.SQL(
+                            """
+                    CREATE TABLE IF NOT EXISTS {schema}.{table} (
+                        code TEXT PRIMARY KEY,
+                        label_en TEXT,
+                        description_en TEXT,
+                        parent_code TEXT
+                    );
+                    """
+                        ).format(
+                            schema=sql.Identifier(schema),
+                            table=sql.Identifier(cl_table_name),
+                        )
                     )
-                    yield row_str.encode("utf-8")
 
-            for cl_id, codelist_obj in codelists.items():
-                cl_table_name = cl_id.lower()
-                staging_cl_table = f"staging_{cl_table_name}"
-
-                # Create the main table if it doesn't exist
-                cur.execute(sql.SQL("""
-                CREATE TABLE IF NOT EXISTS {schema}.{table} (
-                    code TEXT PRIMARY KEY,
-                    label_en TEXT,
-                    description_en TEXT,
-                    parent_code TEXT
-                );
-                """).format(
-                    schema=sql.Identifier(schema),
-                    table=sql.Identifier(cl_table_name)
-                ))
-
-                # Create a temporary staging table and load data into it
-                cur.execute(
-                    sql.SQL(
-                        "CREATE TEMP TABLE {staging_table} (LIKE {schema}.{table})"
-                    ).format(
-                        staging_table=sql.Identifier(staging_cl_table),
-                        schema=sql.Identifier(schema),
-                        table=sql.Identifier(cl_table_name),
+                    # Create a temporary staging table and load data into it
+                    cur.execute(
+                        sql.SQL(
+                            "CREATE TEMP TABLE {staging_table} (LIKE {schema}.{table})"
+                        ).format(
+                            staging_table=sql.Identifier(staging_cl_table),
+                            schema=sql.Identifier(schema),
+                            table=sql.Identifier(cl_table_name),
+                        )
                     )
-                )
 
-                copy_sql = sql.SQL("COPY {staging_table} FROM STDIN").format(
-                    staging_table=sql.Identifier(staging_cl_table)
-                )
-                with cur.copy(copy_sql) as copy:
-                    for data_chunk in codelist_data_generator(codelist_obj):
-                        copy.write(data_chunk)
-
-                logger.info(
-                    f"Loaded {cur.rowcount} rows into staging table for codelist '{cl_id}'"
-                )
-
-                # Atomically replace the contents of the main table
-                cur.execute(sql.SQL("""
-                BEGIN;
-                TRUNCATE {schema}.{table};
-                INSERT INTO {schema}.{table} SELECT * FROM {staging_table};
-                COMMIT;
-                """).format(
-                    schema=sql.Identifier(schema),
-                    table=sql.Identifier(cl_table_name),
-                    staging_table=sql.Identifier(staging_cl_table)
-                ))
-                cur.execute(
-                    sql.SQL("DROP TABLE {staging_table}").format(
+                    copy_sql = sql.SQL("COPY {staging_table} FROM STDIN").format(
                         staging_table=sql.Identifier(staging_cl_table)
                     )
-                )
+                    with cur.copy(copy_sql) as copy:
+                        for data_chunk in codelist_data_generator(codelist_obj):
+                            copy.write(data_chunk)
+                    logger.info(
+                        f"Loaded {cur.rowcount} rows into staging table for codelist '{cl_id}'"
+                    )
 
-        self.conn.commit()
+                    # Use MERGE (INSERT ... ON CONFLICT) for efficient updates
+                    merge_sql = sql.SQL(
+                        """
+                    INSERT INTO {schema}.{table}
+                    SELECT * FROM {staging_table}
+                    ON CONFLICT (code) DO UPDATE SET
+                        label_en = EXCLUDED.label_en,
+                        description_en = EXCLUDED.description_en,
+                        parent_code = EXCLUDED.parent_code;
+                    """
+                    ).format(
+                        schema=sql.Identifier(schema),
+                        table=sql.Identifier(cl_table_name),
+                        staging_table=sql.Identifier(staging_cl_table),
+                    )
+                    cur.execute(merge_sql)
+                    cur.execute(
+                        sql.SQL("DROP TABLE {staging_table}").format(
+                            staging_table=sql.Identifier(staging_cl_table)
+                        )
+                    )
         logger.info("Codelist loading complete.")
 
     def bulk_load_staging(
@@ -227,32 +237,52 @@ class PostgresLoader(LoaderInterface):
         return staging_table, row_count
 
     def finalize_load(self, staging_table: str, target_table: str, schema: str) -> None:
-        logger.info(f"Finalizing load from '{staging_table}' to '{target_table}'.")
-        with self.conn.cursor() as cur:
-            # Using sql.SQL to compose the query safely
-            truncate_sql = sql.SQL("TRUNCATE TABLE {schema}.{target}").format(
-                schema=sql.Identifier(schema), target=sql.Identifier(target_table)
-            )
-            insert_sql = sql.SQL(
-                "INSERT INTO {schema}.{target} SELECT * FROM {schema}.{staging}"
-            ).format(
-                schema=sql.Identifier(schema),
-                target=sql.Identifier(target_table),
-                staging=sql.Identifier(staging_table),
-            )
-            drop_sql = sql.SQL("DROP TABLE {schema}.{staging}").format(
-                schema=sql.Identifier(schema), staging=sql.Identifier(staging_table)
-            )
+        logger.info(
+            f"Finalizing load from '{staging_table}' to '{target_table}' "
+            "using atomic table swap."
+        )
+        backup_table = f"{target_table}_old"
 
-            cur.execute(sql.SQL("""
-            BEGIN;
-            {truncate};
-            {insert};
-            COMMIT;
-            """).format(truncate=truncate_sql, insert=insert_sql))
-            cur.execute(drop_sql)
-        self.conn.commit()
-        logger.info("Load finalized successfully.")
+        with self.conn.transaction():
+            with self.conn.cursor() as cur:
+                # 1. Drop the old backup table if it exists from a previous failed run
+                cur.execute(
+                    sql.SQL("DROP TABLE IF EXISTS {schema}.{backup} CASCADE").format(
+                        schema=sql.Identifier(schema),
+                        backup=sql.Identifier(backup_table),
+                    )
+                )
+
+                # 2. Rename the current target table to the backup table
+                # IF a target table actually exists.
+                cur.execute(
+                    sql.SQL(
+                        "ALTER TABLE IF EXISTS {schema}.{target} RENAME TO {backup}"
+                    ).format(
+                        schema=sql.Identifier(schema),
+                        target=sql.Identifier(target_table),
+                        backup=sql.Identifier(backup_table),
+                    )
+                )
+
+                # 3. Rename the staging table to become the new target table
+                cur.execute(
+                    sql.SQL("ALTER TABLE {schema}.{staging} RENAME TO {target}").format(
+                        schema=sql.Identifier(schema),
+                        staging=sql.Identifier(staging_table),
+                        target=sql.Identifier(target_table),
+                    )
+                )
+
+                # 4. Drop the old backup table.
+                cur.execute(
+                    sql.SQL("DROP TABLE IF EXISTS {schema}.{backup} CASCADE").format(
+                        schema=sql.Identifier(schema),
+                        backup=sql.Identifier(backup_table),
+                    )
+                )
+
+        logger.info("Load finalized successfully. Tables swapped.")
 
     def get_ingestion_state(
         self, dataset_id: str, schema: str
