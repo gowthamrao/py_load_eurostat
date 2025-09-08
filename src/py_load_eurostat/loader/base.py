@@ -8,7 +8,8 @@ must adhere to.
 from abc import ABC, abstractmethod
 from typing import Dict, Generator, Optional, Tuple
 
-from ..models import DSD, Codelist, Observation, IngestionHistory
+from ..models import DSD, Codelist, IngestionHistory, Observation
+
 
 class LoaderInterface(ABC):
     """
@@ -80,7 +81,9 @@ class LoaderInterface(ABC):
         pass
 
     @abstractmethod
-    def get_ingestion_state(self, dataset_id: str, schema: str) -> Optional[IngestionHistory]:
+    def get_ingestion_state(
+        self, dataset_id: str, schema: str
+    ) -> Optional[IngestionHistory]:
         """
         Retrieves the most recent successful IngestionHistory record for a given
         dataset.
@@ -95,7 +98,9 @@ class LoaderInterface(ABC):
         pass
 
     @abstractmethod
-    def save_ingestion_state(self, history_record: IngestionHistory, schema: str) -> None:
+    def save_ingestion_state(
+        self, history_record: IngestionHistory, schema: str
+    ) -> None:
         """
         Saves or updates an IngestionHistory record in the database.
 

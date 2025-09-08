@@ -4,9 +4,9 @@ Command-line interface for the py-load-eurostat application.
 This module uses Typer to create a CLI for running the ingestion pipeline.
 """
 import logging
-from typing_extensions import Annotated
 
 import typer
+from typing_extensions import Annotated
 
 # Create a Typer application
 app = typer.Typer(
@@ -34,8 +34,12 @@ LoadStrategyOption = typer.Option(
     "Full",
     "--load-strategy",
     "-s",
-    help="The load strategy: 'Full' (replaces entire dataset) or 'Delta' (loads if source is newer)."
+    help=(
+        "The load strategy: 'Full' (replaces entire dataset) or 'Delta' "
+        "(loads if source is newer)."
+    ),
 )
+
 
 @app.command()
 def run(
@@ -47,7 +51,8 @@ def run(
     Run the full ingestion pipeline for a single Eurostat dataset.
     """
     # Basic logging setup for the CLI
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+    log_format = "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+    logging.basicConfig(level=logging.INFO, format=log_format)
 
     typer.echo(f"Starting pipeline for dataset: {dataset_id}")
     typer.echo(f"  - Representation: {representation}")
@@ -57,8 +62,11 @@ def run(
     # For now, this is a placeholder.
     try:
         from .pipeline import run_pipeline
+
         run_pipeline(dataset_id, representation, load_strategy)
-        typer.secho(f"Pipeline for {dataset_id} completed successfully.", fg=typer.colors.GREEN)
+        typer.secho(
+            f"Pipeline for {dataset_id} completed successfully.", fg=typer.colors.GREEN
+        )
     except Exception as e:
         # The pipeline function will handle its own detailed error logging.
         # This is a final catch-all for the CLI.

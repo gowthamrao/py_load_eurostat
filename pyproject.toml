@@ -24,7 +24,7 @@ dependencies = [
     "httpx",
     "pandas",
     "pysdmx[xml]",
-    "psycopg>=3.1",
+    "psycopg[binary]>=3.1",
     "pydantic",
     "pydantic-settings",
     "tenacity", # For retry mechanisms

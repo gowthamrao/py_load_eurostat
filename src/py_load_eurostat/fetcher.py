@@ -10,17 +10,15 @@ import logging
 from pathlib import Path
 
 import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential, before_sleep_log
+from tenacity import before_sleep_log, retry, stop_after_attempt, wait_exponential
 
 from .config import AppSettings
 
 # Configure a logger for this module
 logger = logging.getLogger(__name__)
 
-# Base URL for the Eurostat SDMX 2.1 API
-EUROSTAT_SDMX_API_URL = "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1"
-# Base URL for the Eurostat Dissemination Files API (for bulk inventory)
-EUROSTAT_FILES_API_URL = "https://ec.europa.eu/eurostat/api/dissemination/files"
+# Base URL for the Eurostat API
+EUROSTAT_API_BASE_URL = "https://ec.europa.eu/eurostat/api/dissemination"
 
 class Fetcher:
     """
@@ -95,31 +93,40 @@ class Fetcher:
 
         return self._download_to_cache(url, cache_filename)
 
-    def get_data_inventory(self) -> Path:
+    def get_toc(self) -> Path:
         """
-        Fetches the bulk data inventory, which lists all TSV datasets.
-        The response is a CSV file.
+        Fetches the master Table of Contents (TOC) for all bulk data.
+        The response is a tab-separated values (TSV) file.
         """
-        url = f"{EUROSTAT_FILES_API_URL}/inventory?type=data&format=csv"
-        return self._fetch(url, "inventory.csv")
+        url = f"{EUROSTAT_API_BASE_URL}/catalogue/toc/txt?lang=en"
+        return self._fetch(url, "toc.tsv")
 
-    def get_dataset_tsv(self, dataset_id: str) -> Path:
+    def get_dataset_tsv(self, dataset_id: str, download_url: str) -> Path:
         """
-        Fetches a dataset in the compressed TSV format.
+        Fetches a dataset in the compressed TSV format using a direct
+        bulk download URL.
+
+        Args:
+            dataset_id: The code of the dataset, used for caching.
+            download_url: The full, direct URL to the .tsv.gz file.
         """
-        url = f"{EUROSTAT_SDMX_API_URL}/data/{dataset_id}/?format=TSV&compressed=true"
-        return self._fetch(url, f"{dataset_id}.tsv.gz")
+        # The cache filename is derived from the dataset_id, not the URL's filename
+        cache_filename = f"{dataset_id.lower()}.tsv.gz"
+        return self._fetch(download_url, cache_filename)
 
     def get_dsd_xml(self, dataset_id: str) -> Path:
         """
         Fetches the Data Structure Definition (DSD) for a given dataset.
         """
-        url = f"{EUROSTAT_SDMX_API_URL}/dataflow/ESTAT/{dataset_id}/latest?references=datastructure"
+        url = (
+            f"{EUROSTAT_API_BASE_URL}/sdmx/2.1/dataflow/ESTAT/{dataset_id}"
+            "/latest?references=datastructure"
+        )
         return self._fetch(url, f"dsd_{dataset_id}.xml")
 
     def get_codelist_xml(self, codelist_id: str) -> Path:
         """
         Fetches a specific Codelist in SDMX-ML format.
         """
-        url = f"{EUROSTAT_SDMX_API_URL}/codelist/ESTAT/{codelist_id}/latest"
+        url = f"{EUROSTAT_API_BASE_URL}/sdmx/2.1/codelist/ESTAT/{codelist_id}/latest"
         return self._fetch(url, f"codelist_{codelist_id}.xml")

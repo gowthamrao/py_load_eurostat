@@ -8,14 +8,14 @@ This module contains:
 """
 import gzip
 import logging
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Generator, List, Optional
-import xml.etree.ElementTree as ET
+from typing import Dict, List, Optional
 
 import pandas as pd
 
-from .models import DSD, Attribute, Codelist, Code, Dimension
+from .models import DSD, Attribute, Code, Codelist, Dimension
 
 logger = logging.getLogger(__name__)
 
@@ -101,31 +101,46 @@ class SdmxParser:
             codes=codes,
         )
 
+from typing import Tuple
+
+
 class TsvParser:
     """
-    An iterator that parses a Eurostat gzipped TSV file, handles the unique
-    header format, and yields data rows as dictionaries.
+    Parses a Eurostat gzipped TSV file, returning the raw data in a wide
+    format DataFrame and the parsed dimension/time columns.
     """
     def __init__(self, tsv_path: Path):
         self.tsv_path = tsv_path
-        self.dimension_cols: List[str] = []
-        self.time_period_cols: List[str] = []
-        self._iterator = self._init_iterator()
 
-    def _init_iterator(self) -> Generator[Dict, None, None]:
+    def parse(self) -> Tuple[pd.DataFrame, List[str], List[str]]:
+        """
+        Parses the TSV file into a pandas DataFrame without transformation.
+
+        Returns:
+            A tuple containing:
+            - The raw data in a wide DataFrame.
+            - A list of the dimension column names.
+            - A list of the time period column names.
+        """
         # 1. Read header line to get dimension and time period columns
         with gzip.open(self.tsv_path, 'rt', encoding='utf-8') as f:
             header_line = f.readline().strip()
 
         header_parts = header_line.split('\t')
         dim_header = header_parts[0]
-        self.dimension_cols = [d.strip() for d in dim_header.split(',')]
-        if self.dimension_cols and '\\' in self.dimension_cols[-1]:
-            self.dimension_cols[-1] = self.dimension_cols[-1].split('\\')[0]
+        dimension_cols = [d.strip() for d in dim_header.split(',')]
+        # Clean up the `geo\time` part
+        if dimension_cols and '\\' in dimension_cols[-1]:
+            last_dim_parts = dimension_cols[-1].split('\\')
+            dimension_cols[-1] = last_dim_parts[0]
+            # The part after the slash is the name of the time dimension itself
+            time_dim_name = last_dim_parts[1] if len(last_dim_parts) > 1 else 'time'
+        else:
+            time_dim_name = 'time' # Fallback name
 
-        self.time_period_cols = [p.strip() for p in header_parts[1:]]
+        time_period_cols = [p.strip() for p in header_parts[1:]]
 
-        # 2. Read the data using pandas, skipping the original header
+        # 2. Read the data using pandas, using the parsed header
         df = pd.read_csv(
             self.tsv_path,
             compression='gzip',
@@ -133,83 +148,92 @@ class TsvParser:
             header=0,
             na_values=[': ', ':']
         )
+        df.rename(columns={df.columns[0]: 'dimensions_combined'}, inplace=True)
 
-        # 3. Process the first column which contains all dimensions
-        first_col_name = df.columns[0]
-        # Split the first column into separate dimension columns
-        dims_df = df[first_col_name].str.split(',', expand=True)
-        dims_df.columns = self.dimension_cols[:dims_df.shape[1]]
+        # 3. Split the combined dimension column into separate columns
+        dims_df = df['dimensions_combined'].str.split(',', expand=True)
+        # Assign names to the new dimension columns, ensuring we don't overrun
+        dims_df.columns = dimension_cols[:dims_df.shape[1]]
 
         # 4. Combine the new dimension columns with the time period data
-        full_df = pd.concat([dims_df, df[self.time_period_cols]], axis=1)
+        raw_wide_df = pd.concat([dims_df, df[time_period_cols]], axis=1)
 
-        # 5. Melt the dataframe to transform from wide to long format
-        melted_df = full_df.melt(
-            id_vars=self.dimension_cols,
-            value_vars=self.time_period_cols,
-            var_name='time_period',
-            value_name='value'
-        )
+        logger.info(f"Parsed {self.tsv_path} into a wide DataFrame with {len(raw_wide_df)} rows.")
+        return raw_wide_df, dimension_cols, time_period_cols
 
-        # 6. Drop rows with missing values, which were not loaded by pandas
-        melted_df.dropna(subset=['value'], inplace=True)
-
-        # 7. Yield rows as dictionaries
-        yield from melted_df.to_dict(orient='records')
-
-    def __iter__(self) -> Generator[Dict, None, None]:
-        return self._iterator
-
-    def __next__(self):
-        return next(self._iterator)
-
-class InventoryParser:
+class TocParser:
     """
-    Parses the Eurostat bulk data inventory CSV file.
-    """
-    def __init__(self, inventory_path: Path):
-        self.inventory_path = inventory_path
-        self._update_map = self._load_inventory()
+    Parses the Eurostat Table of Contents (TOC) file.
 
-    def _load_inventory(self) -> Dict[str, datetime]:
+    The TOC provides metadata about all available bulk download files, including
+    dataset codes, titles, update times, and download URLs.
+    """
+    def __init__(self, toc_path: Path):
+        self.toc_path = toc_path
+        self._toc_data: Dict[str, Dict] = {}
+        self._load_toc()
+
+    def _load_toc(self) -> None:
         """
-        Loads the inventory CSV into a dictionary mapping dataset codes to
-        their last update timestamps.
+        Loads the tab-separated TOC file into a dictionary for easy lookup.
+        The dictionary maps dataset codes to their metadata.
         """
-        logger.info(f"Loading and parsing inventory file: {self.inventory_path}")
+        logger.info(f"Loading and parsing Table of Contents file: {self.toc_path}")
         try:
-            df = pd.read_csv(self.inventory_path)
-            # We only care about TSV files, which are the datasets
-            df = df[df['NAME'].str.endswith('.tsv.gz', na=False)]
+            with open(self.toc_path, "r", encoding="utf-8") as f:
+                # Skip header line
+                next(f, None)
+                for line in f:
+                    # Strip quotes and whitespace from each part
+                    parts = [p.strip().strip('"') for p in line.strip().split('\t')]
+                    # The 'type' column (index 2) tells us if it's a downloadable dataset
+                    if len(parts) < 7 or parts[2] not in ("table", "dataset"):
+                        continue
 
-            # Extract the dataset code (e.g., 'tps00001') from the filename
-            df['dataset_code'] = df['NAME'].str.replace(r'\.tsv\.gz$', '', regex=True)
+                    code = parts[1]
+                    # We only care about datasets, which have a 'code'
+                    if not code:
+                        continue
 
-            # Convert the DATE column to timezone-aware datetime objects
-            # The API returns ISO 8601 format, which pandas handles well
-            df['last_update'] = pd.to_datetime(df['DATE'], utc=True)
+                    # The download URL is the last column
+                    url_part = parts[-1]
+                    if not url_part.endswith(".tsv.gz"):
+                        continue
 
-            # Create the lookup map
-            update_map = df.set_index('dataset_code')['last_update'].to_dict()
-            logger.info(f"Successfully parsed {len(update_map)} dataset entries from inventory.")
-            return update_map
-        except (FileNotFoundError, pd.errors.ParserError, KeyError) as e:
-            logger.error(f"Failed to load or parse inventory file {self.inventory_path}: {e}", exc_info=True)
-            return {}
+                    self._toc_data[code.lower()] = {
+                        'url': f"https://ec.europa.eu/eurostat/api/dissemination{url_part}",
+                        'last_update': pd.to_datetime(parts[3], utc=True)
+                    }
+            logger.info(f"Successfully parsed {len(self._toc_data)} dataset entries from TOC.")
+        except FileNotFoundError:
+            logger.error(f"TOC file not found at {self.toc_path}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to parse TOC file {self.toc_path}: {e}", exc_info=True)
+
 
     def get_last_update_timestamp(self, dataset_id: str) -> Optional[datetime]:
         """
-        Gets the last update timestamp for a specific dataset from the inventory.
+        Gets the last update timestamp for a specific dataset from the TOC.
 
         Args:
-            dataset_id: The ID of the dataset (e.g., 'nama_10_gdp').
+            dataset_id: The code of the dataset (e.g., 'nama_10_gdp').
 
         Returns:
             A timezone-aware datetime object or None if the dataset is not found.
         """
-        update_time = self._update_map.get(dataset_id.lower())
-        if update_time:
-            logger.info(f"Found last update time for '{dataset_id}': {update_time}")
-        else:
-            logger.warning(f"Dataset '{dataset_id}' not found in the inventory file.")
-        return update_time
+        dataset_info = self._toc_data.get(dataset_id.lower())
+        return dataset_info['last_update'] if dataset_info else None
+
+    def get_download_url(self, dataset_id: str) -> Optional[str]:
+        """
+        Gets the full download URL for a specific dataset from the TOC.
+
+        Args:
+            dataset_id: The code of the dataset (e.g., 'nama_10_gdp').
+
+        Returns:
+            The full download URL string or None if not found.
+        """
+        dataset_info = self._toc_data.get(dataset_id.lower())
+        return dataset_info['url'] if dataset_info else None

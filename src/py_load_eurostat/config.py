@@ -5,10 +5,11 @@ This module uses pydantic-settings to manage application configuration,
 allowing settings to be loaded from environment variables or a .env file.
 """
 from pathlib import Path
-from functools import lru_cache
 from typing import Optional
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 class DatabaseSettings(BaseSettings):
     """
@@ -16,17 +17,27 @@ class DatabaseSettings(BaseSettings):
     """
     host: str = Field(default="localhost", description="Database host address.")
     port: int = Field(default=5432, description="Database port number.")
-    user: str = Field(default="postgres", description="Username for database authentication.")
-    password: Optional[str] = Field(default=None, description="Password for database authentication.")
-    name: str = Field(default="eurostat", description="The name of the database to connect to.")
+    user: str = Field(
+        default="postgres", description="Username for database authentication."
+    )
+    password: Optional[str] = Field(
+        default=None, description="Password for database authentication."
+    )
+    name: str = Field(
+        default="eurostat", description="The name of the database to connect to."
+    )
+
 
 class CacheSettings(BaseSettings):
     """Defines the configuration for the data caching mechanism."""
+
     path: Path = Field(
         default_factory=lambda: Path.home() / ".cache" / "py-load-eurostat",
-        description="The filesystem path for storing cached downloads."
+        description="The filesystem path for storing cached downloads.",
     )
-    enabled: bool = Field(default=True, description="A flag to enable or disable caching.")
+    enabled: bool = Field(
+        default=True, description="A flag to enable or disable caching."
+    )
 
 class LoggingSettings(BaseSettings):
     """Defines the logging configuration."""

@@ -7,8 +7,9 @@ observational data. These models are used as Data Transfer Objects (DTOs)
 between the different layers of the pipeline.
 """
 from datetime import datetime
-from enum import StrEnum
-from typing import List, Dict, Any, Optional
+from enum import Enum
+from typing import Dict, List, Optional
+
 from pydantic import BaseModel, Field
 
 # === SDMX Metadata Models ===
@@ -60,12 +61,15 @@ class Observation(BaseModel):
 
 # === Ingestion History Models ===
 
-class IngestionStatus(StrEnum):
+
+class IngestionStatus(str, Enum):
     """Enum for the status of an ingestion process."""
+
     PENDING = "PENDING"
     RUNNING = "RUNNING"
     SUCCESS = "SUCCESS"
     FAILED = "FAILED"
+
 
 class IngestionHistory(BaseModel):
     """
@@ -77,12 +81,12 @@ class IngestionHistory(BaseModel):
 
     ingestion_id: Optional[int] = Field(default=None, description="Primary key for the ingestion record.")
     dataset_id: str = Field(description="The Eurostat dataset identifier (e.g., 'nama_10_gdp').")
-    dsd_version: str = Field(description="The version of the DSD used for this load.")
+    dsd_version: Optional[str] = Field(default=None, description="The version of the DSD used for this load.")
     load_strategy: str = Field(description="The load strategy used, e.g., 'FULL' or 'DELTA'.")
     representation: str = Field(description="The data representation, e.g., 'STANDARD' or 'FULL'.")
     status: IngestionStatus = Field(default=IngestionStatus.PENDING, description="The current status of the ingestion.")
     start_time: datetime = Field(default_factory=datetime.utcnow, description="The start time of the ingestion process.")
     end_time: Optional[datetime] = Field(default=None, description="The end time of the ingestion process.")
     rows_loaded: Optional[int] = Field(default=None, description="The total number of observation rows loaded.")
-    source_last_update: datetime = Field(description="The 'last_update' timestamp from the Eurostat source.")
+    source_last_update: Optional[datetime] = Field(default=None, description="The 'last_update' timestamp from the Eurostat source.")
     error_details: Optional[str] = Field(default=None, description="Detailed error information if the ingestion failed.")

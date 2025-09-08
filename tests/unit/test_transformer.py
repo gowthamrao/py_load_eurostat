@@ -2,8 +2,10 @@
 Unit tests for the transformer module.
 """
 from pathlib import Path
+
 import pytest
-from py_load_eurostat.models import DSD, Codelist, Dimension
+
+from py_load_eurostat.models import DSD, Dimension
 from py_load_eurostat.transformer import Transformer
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
@@ -40,13 +42,21 @@ def test_transformer_parse_value(raw_input, expected_value, expected_flag, mock_
     assert value == expected_value
     assert flag == expected_flag
 
+from py_load_eurostat.parser import TsvParser
+
+
 def test_transformer_transform(mock_dsd):
     """Tests the main transform generator method."""
-    transformer = Transformer(dsd=mock_dsd, codelists={})
+    # 1. Setup: Parse the file first to get the wide dataframe
     tsv_path = FIXTURES_DIR / "tps00001.tsv.gz"
+    parser = TsvParser(tsv_path)
+    wide_df, dim_cols, time_cols = parser.parse()
 
-    observations = list(transformer.transform(tsv_path))
+    # 2. Execution: Transform the parsed data
+    transformer = Transformer(dsd=mock_dsd, codelists={})
+    observations = list(transformer.transform(wide_df, dim_cols, time_cols))
 
+    # 3. Assertions
     # The source file has 3 data rows and 2 time periods, with one missing value.
     # So we expect (3 * 2) - 1 = 5 observations.
     assert len(observations) == 5

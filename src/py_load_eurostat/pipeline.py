@@ -5,19 +5,23 @@ This module brings together all the components (fetcher, parser, transformer,
 loader) to execute the end-to-end data ingestion process.
 """
 import logging
-from datetime import datetime, UTC
+import logging
+from datetime import datetime, timezone
+from typing import Optional
 
 from .config import settings
 from .fetcher import Fetcher
 from .loader.postgresql import PostgresLoader
 from .models import IngestionHistory, IngestionStatus
-from .parser import SdmxParser, InventoryParser
+from .parser import SdmxParser, TocParser, TsvParser
 from .transformer import Transformer
 
 logger = logging.getLogger(__name__)
 
 
-def run_pipeline(dataset_id: str, representation: str, load_strategy: str):
+def run_pipeline(
+    dataset_id: str, representation: str, load_strategy: str
+) -> None:
     """
     Orchestrates the end-to-end ingestion pipeline for a given dataset.
 
@@ -27,99 +31,112 @@ def run_pipeline(dataset_id: str, representation: str, load_strategy: str):
         load_strategy: The load strategy ('Full' or 'Delta').
     """
     loader = None
-    history_record = None  # Initialize to None for robust error handling
-    start_time = datetime.now(UTC)
+    history_record: Optional[IngestionHistory] = None
+    start_time = datetime.now(timezone.utc)
+    data_schema = "eurostat_data"
+    meta_schema = "eurostat_meta"
 
     try:
         # 1. Initialize components
         fetcher = Fetcher(settings)
         sdmx_parser = SdmxParser()
         loader = PostgresLoader(settings.db)
-        data_schema = "eurostat_data"
-        meta_schema = "eurostat_meta"
 
-        # 2. Delta Load Check
-        logger.info(f"Checking for remote updates for dataset '{dataset_id}'...")
-        inventory_path = fetcher.get_data_inventory()
-        inventory_parser = InventoryParser(inventory_path)
-        remote_last_update = inventory_parser.get_last_update_timestamp(dataset_id)
-
-        if not remote_last_update:
-            raise RuntimeError(f"Could not find dataset '{dataset_id}' in Eurostat's bulk data inventory.")
+        # 2. Fetch TOC and check for updates
+        logger.info("Fetching Table of Contents...")
+        toc_path = fetcher.get_toc()
+        toc_parser = TocParser(toc_path)
+        remote_last_update = toc_parser.get_last_update_timestamp(dataset_id)
+        download_url = toc_parser.get_download_url(dataset_id)
 
         history_record = IngestionHistory(
             dataset_id=dataset_id,
-            dsd_version="N/A",
             load_strategy=load_strategy,
             representation=representation,
             status=IngestionStatus.RUNNING,
             start_time=start_time,
-            source_last_update=remote_last_update,
         )
+
+        if not remote_last_update or not download_url:
+            raise RuntimeError(
+                f"Could not find dataset '{dataset_id}' in Eurostat's Table of Contents."
+            )
+
+        # Update history record with info we just fetched
+        history_record.source_last_update = remote_last_update
 
         if load_strategy.lower() == "delta":
             last_ingestion = loader.get_ingestion_state(dataset_id, data_schema)
-            if last_ingestion and last_ingestion.source_last_update >= remote_last_update:
-                logger.info(
-                    f"Local data for '{dataset_id}' is up-to-date (last source update: "
-                    f"{last_ingestion.source_last_update}). Skipping ingestion."
-                )
-                history_record.status = IngestionStatus.SUCCESS
-                history_record.end_time = datetime.now(UTC)
-                history_record.rows_loaded = 0
-                return  # Graceful exit, finally block will still run
+            if (
+                last_ingestion
+                and last_ingestion.source_last_update
+                and remote_last_update
+                and last_ingestion.source_last_update >= remote_last_update
+            ):
+                logger.info(f"Local data for '{dataset_id}' is up-to-date. Skipping.")
+                if history_record:
+                    history_record.status = IngestionStatus.SUCCESS
+                    history_record.end_time = datetime.now(timezone.utc)
+                    history_record.rows_loaded = 0
+                return
 
-        # 3. Fetch and parse metadata
+        # 3. Fetch and parse metadata (DSD, Codelists)
         logger.info("Fetching and parsing metadata...")
         dsd_xml_path = fetcher.get_dsd_xml(dataset_id)
         dsd = sdmx_parser.parse_dsd_from_dataflow(dsd_xml_path)
         history_record.dsd_version = dsd.version
 
-        codelist_ids = [dim.codelist_id for dim in dsd.dimensions]
-        codelist_paths = {cid: fetcher.get_codelist_xml(cid) for cid in codelist_ids if cid}
-        codelists = {cid: sdmx_parser.parse_codelist(path) for cid, path in codelist_paths.items()}
+        codelist_ids = [dim.codelist_id for dim in dsd.dimensions if dim.codelist_id]
+        codelist_paths = {
+            cid: fetcher.get_codelist_xml(cid) for cid in codelist_ids
+        }
+        codelists = {
+            cid: sdmx_parser.parse_codelist(path) for cid, path in codelist_paths.items()
+        }
 
-        # 3. Prepare database schema
+        # 4. Prepare database schema
         table_name = f"data_{dataset_id.lower()}"
-        data_schema = "eurostat_data"
-        meta_schema = "eurostat_meta"
         loader.prepare_schema(dsd, table_name, data_schema)
         loader.manage_codelists(codelists, meta_schema)
 
-        # 4. Fetch main data file
-        logger.info("Fetching dataset TSV file...")
-        tsv_path = fetcher.get_dataset_tsv(dataset_id)
+        # 5. Fetch and Parse main data file
+        logger.info(f"Fetching dataset TSV from {download_url}...")
+        tsv_path = fetcher.get_dataset_tsv(dataset_id, download_url)
+        tsv_parser = TsvParser(tsv_path)
+        wide_df, dim_cols, time_cols = tsv_parser.parse()
 
-        # 5. Transform and Load data
+        # 6. Transform and Load data
         logger.info("Initializing transformation and loading...")
         transformer = Transformer(dsd, codelists)
-        data_stream = transformer.transform(tsv_path, representation)
+        data_stream = transformer.transform(
+            wide_df, dim_cols, time_cols, representation
+        )
 
         staging_table, rows_loaded = loader.bulk_load_staging(
-            table_name=table_name,
-            schema=data_schema,
-            data_stream=data_stream
+            table_name=table_name, schema=data_schema, data_stream=data_stream
         )
         history_record.rows_loaded = rows_loaded
 
-        # 6. Finalize load
+        # 7. Finalize load
         loader.finalize_load(staging_table, table_name, data_schema)
 
         # 7. Record successful ingestion
-        history_record.status = IngestionStatus.SUCCESS
-        history_record.end_time = datetime.now(UTC)
+        if history_record:
+            history_record.status = IngestionStatus.SUCCESS
+            history_record.end_time = datetime.now(timezone.utc)
         logger.info(f"Pipeline completed successfully for dataset {dataset_id}.")
 
     except Exception as e:
         logger.critical(f"Pipeline failed for dataset {dataset_id}: {e}", exc_info=True)
-        history_record.status = IngestionStatus.FAILED
-        history_record.end_time = datetime.now(UTC)
-        history_record.error_details = str(e)
+        if history_record:
+            history_record.status = IngestionStatus.FAILED
+            history_record.end_time = datetime.now(timezone.utc)
+            history_record.error_details = str(e)
         raise
 
     finally:
         # 8. Save final ingestion state and close connections
-        if loader:
+        if loader and history_record:
             try:
                 loader.save_ingestion_state(history_record, data_schema)
             except Exception as db_e:
