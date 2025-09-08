@@ -76,9 +76,8 @@ class SQLiteLoader(LoaderInterface):
 
     def manage_codelists(self, codelists: Dict[str, Codelist], schema: str) -> None:
         logger.info(f"Loading {len(codelists)} codelists into schema '{schema}'")
-        with self.conn:
-            self.conn.execute("BEGIN")
-            try:
+        try:
+            with self.conn:
                 for cl_id, codelist_obj in codelists.items():
                     cl_table_fqn = self._fqn(schema, cl_id.lower())
                     self.conn.execute(
@@ -91,6 +90,8 @@ class SQLiteLoader(LoaderInterface):
                     );
                     """
                     )
+                    if not codelist_obj.codes:
+                        continue
                     rows = [
                         (item.id, item.name, item.description, item.parent_id)
                         for item in codelist_obj.codes.values()
@@ -100,10 +101,9 @@ class SQLiteLoader(LoaderInterface):
                         f"INSERT OR REPLACE INTO {cl_table_fqn} VALUES (?, ?, ?, ?)",
                         rows,
                     )
-                self.conn.execute("COMMIT")
-            except Exception:
-                self.conn.execute("ROLLBACK")
-                raise
+        except sqlite3.Error as e:
+            logger.error(f"Error during codelist loading: {e}")
+            raise
         logger.info("Codelist loading complete.")
 
     def bulk_load_staging(

@@ -80,7 +80,7 @@ def sample_data_stream():
     return generator()
 
 
-@pytest.mark.skip(reason="Requires Docker permissions which are not available in this environment")
+@pytest.mark.integration
 def test_postgres_loader_end_to_end(
     db_settings: DatabaseSettings, sample_dsd: DSD, sample_data_stream
 ):
