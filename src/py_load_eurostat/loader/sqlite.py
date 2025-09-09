@@ -5,6 +5,7 @@ This is a fallback loader for simple, file-based database needs or for testing
 environments where a full PostgreSQL server is not required. It uses standard
 SQL and is not as performant as the PostgreSQL loader for very large datasets.
 """
+
 import logging
 import sqlite3
 from typing import Dict, Generator, Optional, Tuple
@@ -104,7 +105,9 @@ class SQLiteLoader(LoaderInterface):
 
     def _table_exists(self, table_fqn: str, cur: sqlite3.Cursor) -> bool:
         """Checks if a table exists."""
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_fqn,))
+        cur.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_fqn,)
+        )
         return cur.fetchone() is not None
 
     def _get_existing_columns(self, table_fqn: str, cur: sqlite3.Cursor) -> set[str]:
@@ -124,7 +127,9 @@ class SQLiteLoader(LoaderInterface):
 
             if not self._table_exists(table_fqn, cur):
                 logger.info(f"Table '{table_fqn}' does not exist. Creating...")
-                col_defs = [f'"{name}" {dtype}' for name, dtype in required_columns.items()]
+                col_defs = [
+                    f'"{name}" {dtype}' for name, dtype in required_columns.items()
+                ]
                 pk_cols = [f'"{dim.id}"' for dim in dsd.dimensions] + ['"time_period"']
                 pk_constraint = f"PRIMARY KEY ({', '.join(pk_cols)})"
                 col_defs.append(pk_constraint)
@@ -133,14 +138,18 @@ class SQLiteLoader(LoaderInterface):
                 cur.execute(create_sql)
                 logger.info(f"Table '{table_fqn}' created successfully.")
             else:
-                logger.info(f"Table '{table_fqn}' exists. Checking for schema evolution.")
+                logger.info(
+                    f"Table '{table_fqn}' exists. Checking for schema evolution."
+                )
                 existing_columns = self._get_existing_columns(table_fqn, cur)
                 missing_columns = set(required_columns.keys()) - existing_columns
 
                 if missing_columns:
                     for col_name in missing_columns:
                         col_type = required_columns[col_name]
-                        logger.info(f"Adding missing column '{col_name}' to '{table_fqn}'.")
+                        logger.info(
+                            f"Adding missing column '{col_name}' to '{table_fqn}'."
+                        )
                         alter_sql = f'ALTER TABLE {table_fqn} ADD COLUMN "{col_name}" {col_type}'
                         cur.execute(alter_sql)
                     logger.info("Finished adding missing columns.")
@@ -217,22 +226,33 @@ class SQLiteLoader(LoaderInterface):
             )
             create_sql = res.fetchone()
             if not create_sql:
-                raise RuntimeError(f"Could not find DDL for main table '{main_table_fqn}'")
+                raise RuntimeError(
+                    f"Could not find DDL for main table '{main_table_fqn}'"
+                )
 
             cur.execute(create_sql[0].replace(main_table_fqn, staging_table))
 
-            dim_order = [d.id for d in sorted(self.dsd.dimensions, key=lambda x: x.position)]
+            dim_order = [
+                d.id for d in sorted(self.dsd.dimensions, key=lambda x: x.position)
+            ]
             obs_flag_col_name = next(
-                (attr.id for attr in self.dsd.attributes if "FLAG" in attr.id.upper()), "obs_flags"
+                (attr.id for attr in self.dsd.attributes if "FLAG" in attr.id.upper()),
+                "obs_flags",
             )
 
-            def data_generator(stream: Generator[Observation, None, None]) -> Generator[tuple, None, None]:
+            def data_generator(
+                stream: Generator[Observation, None, None],
+            ) -> Generator[tuple, None, None]:
                 for obs in stream:
                     row_data = [obs.dimensions.get(dim_id) for dim_id in dim_order]
                     row_data.extend([obs.time_period, obs.value, obs.flags])
                     yield tuple(row_data)
 
-            col_names = dim_order + ["time_period", self.dsd.primary_measure_id, obs_flag_col_name]
+            col_names = dim_order + [
+                "time_period",
+                self.dsd.primary_measure_id,
+                obs_flag_col_name,
+            ]
             placeholders = ", ".join(["?"] * len(col_names))
             quoted_col_names = ", ".join(f'"{c}"' for c in col_names)
             sql = f"INSERT INTO {staging_table} ({quoted_col_names}) VALUES ({placeholders})"
@@ -266,17 +286,21 @@ class SQLiteLoader(LoaderInterface):
             cur.close()
         logger.info("Load finalized successfully.")
 
-    def get_ingestion_state(self, dataset_id: str, schema: str) -> Optional[IngestionHistory]:
+    def get_ingestion_state(
+        self, dataset_id: str, schema: str
+    ) -> Optional[IngestionHistory]:
         history_table_fqn = self._fqn(schema, "_ingestion_history")
         logger.info(f"Querying ingestion state for dataset '{dataset_id}'")
 
         cursor = self.conn.cursor()
         try:
-            cursor.execute(f"SELECT 1 FROM sqlite_master WHERE type='table' AND name='{history_table_fqn}'")
+            cursor.execute(
+                f"SELECT 1 FROM sqlite_master WHERE type='table' AND name='{history_table_fqn}'"
+            )
             if not cursor.fetchone():
                 return None  # History table doesn't exist yet
 
-            cursor.row_factory = sqlite3.Row
+            cursor.row_factory = sqlite3.Row  # type: ignore[assignment]
             cursor.execute(
                 f"SELECT * FROM {history_table_fqn} WHERE dataset_id = ? AND status = ? ORDER BY end_time DESC LIMIT 1",
                 (dataset_id, IngestionStatus.SUCCESS.value),

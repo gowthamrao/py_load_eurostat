@@ -2,13 +2,15 @@
 Unit tests for the parser module.
 """
 
-import pytest
 from pathlib import Path
 
-from py_load_eurostat.parser import SdmxParser
+import pytest
+from pysdmx.model.code import Code as PysdmxCode
+from pysdmx.model.code import Codelist as PysdmxCodelist
 from pysdmx.model.dataflow import Component, DataStructureDefinition, Role
-from pysdmx.model.code import Codelist as PysdmxCodelist, Code as PysdmxCode
 from pysdmx.model.message import Message
+
+from py_load_eurostat.parser import SdmxParser
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
@@ -107,8 +109,6 @@ def test_sdmx_parser_codelist(mocker):
 
 
 from datetime import datetime, timezone
-
-import pytest
 
 from py_load_eurostat.parser import TocParser
 

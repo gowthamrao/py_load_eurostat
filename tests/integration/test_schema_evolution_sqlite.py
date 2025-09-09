@@ -1,9 +1,11 @@
 """
 Integration tests for the schema evolution feature in the SQLiteLoader.
 """
-import pytest
-from pathlib import Path
+
 import sqlite3
+from pathlib import Path
+
+import pytest
 
 from py_load_eurostat.config import DatabaseSettings
 from py_load_eurostat.loader.sqlite import SQLiteLoader
@@ -68,7 +70,9 @@ def test_schema_evolution_and_data_loading(db_settings: DatabaseSettings):
     loader.prepare_schema(initial_dsd, table_name, schema)
 
     def stream_gen_v1():
-        yield Observation(dimensions={"dim1": "A"}, time_period="2022", value=10.0, flags="p")
+        yield Observation(
+            dimensions={"dim1": "A"}, time_period="2022", value=10.0, flags="p"
+        )
 
     staging_v1, rows_v1 = loader.bulk_load_staging(table_name, schema, stream_gen_v1())
     loader.finalize_load(staging_v1, table_name, schema)
@@ -91,16 +95,33 @@ def test_schema_evolution_and_data_loading(db_settings: DatabaseSettings):
     loader.prepare_schema(evolved_dsd, table_name, schema)
 
     def stream_gen_v2():
-        yield Observation(dimensions={"dim1": "B", "new_dim": "X"}, time_period="2023", value=20.0, flags="e")
+        yield Observation(
+            dimensions={"dim1": "B", "new_dim": "X"},
+            time_period="2023",
+            value=20.0,
+            flags="e",
+        )
 
     # The `finalize_load` process replaces the table, so we load all data again.
     # A real delta load would merge, but for this test, replacement is fine.
     # We'll load both old and new data into the new table structure.
     def stream_gen_full():
-        yield Observation(dimensions={"dim1": "A", "new_dim": None}, time_period="2022", value=10.0, flags="p")
-        yield Observation(dimensions={"dim1": "B", "new_dim": "X"}, time_period="2023", value=20.0, flags="e")
+        yield Observation(
+            dimensions={"dim1": "A", "new_dim": None},
+            time_period="2022",
+            value=10.0,
+            flags="p",
+        )
+        yield Observation(
+            dimensions={"dim1": "B", "new_dim": "X"},
+            time_period="2023",
+            value=20.0,
+            flags="e",
+        )
 
-    staging_v2, rows_v2 = loader.bulk_load_staging(table_name, schema, stream_gen_full())
+    staging_v2, rows_v2 = loader.bulk_load_staging(
+        table_name, schema, stream_gen_full()
+    )
     loader.finalize_load(staging_v2, table_name, schema)
     assert rows_v2 == 2
 
