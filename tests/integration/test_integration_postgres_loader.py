@@ -12,7 +12,15 @@ from testcontainers.postgres import PostgresContainer
 
 from py_load_eurostat.config import DatabaseSettings
 from py_load_eurostat.loader.postgresql import PostgresLoader
-from py_load_eurostat.models import DSD, Attribute, Dimension, Measure, Observation
+from py_load_eurostat.models import (
+    DSD,
+    Attribute,
+    Code,
+    Codelist,
+    Dimension,
+    Measure,
+    Observation,
+)
 
 
 @pytest.fixture(scope="module")
@@ -186,6 +194,79 @@ def test_postgres_loader_end_to_end(
 
     finally:
         # Clean up created schema
+        if loader.conn and not loader.conn.closed:
+            with loader.conn.cursor() as cur:
+                cur.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE;")
+            loader.close_connection()
+
+
+@pytest.mark.integration
+def test_manage_codelists_insert_and_update(db_settings: DatabaseSettings):
+    """
+    Tests the `manage_codelists` method for both initial insertion and
+    subsequent updates (upsert behavior).
+    """
+    loader = PostgresLoader(db_settings)
+    schema = "test_meta"
+    codelist_id = "CL_GEO"
+    table_name = codelist_id.lower()
+
+    # 1. Initial codelist data
+    initial_codelist = Codelist(
+        id=codelist_id,
+        version="1.0",
+        codes={
+            "DE": Code(id="DE", name="Germany", description="Federal Republic of Germany"),
+            "FR": Code(id="FR", name="France", description=None),
+        },
+    )
+
+    try:
+        # 2. First run: Insert new codelists
+        loader.manage_codelists(codelists={codelist_id: initial_codelist}, schema=schema)
+
+        # 3. Verification of insert
+        with loader.conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(f"SELECT * FROM {schema}.{table_name} ORDER BY code;")
+            results = cur.fetchall()
+            assert len(results) == 2
+            assert results[0]["code"] == "DE"
+            assert results[0]["label_en"] == "Germany"
+            assert results[1]["code"] == "FR"
+            assert results[1]["label_en"] == "France"
+            assert results[1]["description_en"] is None
+
+        # 4. Updated codelist data (update DE, keep FR, add IT)
+        updated_codelist = Codelist(
+            id=codelist_id,
+            version="1.1",
+            codes={
+                "DE": Code(id="DE", name="Germany (updated)", description="Federal Republic of Germany"),
+                "FR": Code(id="FR", name="France", description=None),
+                "IT": Code(id="IT", name="Italy", description="Italian Republic"),
+            },
+        )
+
+        # 5. Second run: Update existing and insert new
+        loader.manage_codelists(codelists={codelist_id: updated_codelist}, schema=schema)
+
+        # 6. Verification of update and insert
+        with loader.conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(f"SELECT * FROM {schema}.{table_name} ORDER BY code;")
+            results = cur.fetchall()
+            assert len(results) == 3
+            # Check that DE was updated
+            assert results[0]["code"] == "DE"
+            assert results[0]["label_en"] == "Germany (updated)"
+            # Check that FR is unchanged
+            assert results[1]["code"] == "FR"
+            assert results[1]["label_en"] == "France"
+            # Check that IT was inserted
+            assert results[2]["code"] == "IT"
+            assert results[2]["label_en"] == "Italy"
+
+    finally:
+        # Clean up
         if loader.conn and not loader.conn.closed:
             with loader.conn.cursor() as cur:
                 cur.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE;")
