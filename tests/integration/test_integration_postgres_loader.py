@@ -169,7 +169,7 @@ def test_postgres_loader_end_to_end(
         assert staging_table.startswith("staging_")
 
         # 3. Finalize load
-        loader.finalize_load(staging_table, table_name, schema)
+        loader.finalize_load(staging_table, table_name, schema, strategy="swap")
 
         # 4. Verification
         with loader.conn.cursor(row_factory=dict_row) as cur:
@@ -194,6 +194,119 @@ def test_postgres_loader_end_to_end(
 
     finally:
         # Clean up created schema
+        if loader.conn and not loader.conn.closed:
+            with loader.conn.cursor() as cur:
+                cur.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE;")
+            loader.close_connection()
+
+
+@pytest.fixture
+def tps00001_dsd() -> DSD:
+    """A simplified DSD for the tps00001 dataset."""
+    return DSD(
+        id="TPS00001",
+        name="Test Dataset",
+        version="1.0",
+        dimensions=[
+            Dimension(id="geo", name="Geo", position=0, data_type="String"),
+        ],
+        attributes=[
+            Attribute(id="obs_flags", name="Observation Flag", data_type="String")
+        ],
+        measures=[
+            Measure(id="obs_value", name="Observation Value", data_type="Double")
+        ],
+        primary_measure_id="obs_value",
+    )
+
+
+def tps00001_initial_stream():
+    """Data stream for the initial load of tps00001."""
+    observations = [
+        Observation(dimensions={"geo": "EU27_2020"}, time_period="2022", value=10.0, flags=None),
+        Observation(dimensions={"geo": "EU27_2020"}, time_period="2021", value=9.5, flags=None),
+        Observation(dimensions={"geo": "DE"}, time_period="2022", value=12.5, flags="p"),
+        Observation(dimensions={"geo": "DE"}, time_period="2021", value=11.8, flags="c"),
+        Observation(dimensions={"geo": "FR"}, time_period="2021", value=8.2, flags=None),
+    ]
+    yield from observations
+
+
+def tps00001_modified_stream():
+    """Data stream for the modified (delta) load of tps00001."""
+    observations = [
+        # DE 2022 is updated from 12.5 to 15.0
+        Observation(dimensions={"geo": "DE"}, time_period="2022", value=15.0, flags="p"),
+        Observation(dimensions={"geo": "DE"}, time_period="2021", value=11.8, flags="c"),
+        # FR is unchanged
+        Observation(dimensions={"geo": "FR"}, time_period="2021", value=8.2, flags=None),
+        # IT is a new geo
+        Observation(dimensions={"geo": "IT"}, time_period="2022", value=7.5, flags=None),
+        Observation(dimensions={"geo": "IT"}, time_period="2021", value=7.0, flags=None),
+    ]
+    yield from observations
+
+
+@pytest.mark.integration
+def test_delta_load_with_merge_strategy(
+    db_settings: DatabaseSettings, tps00001_dsd: DSD
+):
+    """
+    Tests that the 'merge' finalization strategy correctly updates existing
+    rows and inserts new ones, without deleting old ones.
+    """
+    loader = PostgresLoader(db_settings)
+    schema = "test_delta"
+    table_name = "data_tps00001"
+
+    try:
+        # --- 1. Initial Full Load (using SWAP) ---
+        loader.prepare_schema(dsd=tps00001_dsd, table_name=table_name, schema=schema)
+        staging_table_1, rows_1 = loader.bulk_load_staging(
+            table_name, schema, tps00001_initial_stream()
+        )
+        loader.finalize_load(staging_table_1, table_name, schema, strategy="swap")
+
+        # --- Verification of initial state ---
+        with loader.conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(f"SELECT * FROM {schema}.{table_name};")
+            results = cur.fetchall()
+            assert len(results) == 5  # Initial data has 5 observations
+
+        # --- 2. Delta Load (using MERGE) ---
+        staging_table_2, rows_2 = loader.bulk_load_staging(
+            table_name, schema, tps00001_modified_stream()
+        )
+        loader.finalize_load(staging_table_2, table_name, schema, strategy="merge")
+
+        # --- 3. Final Verification ---
+        with loader.conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(f"SELECT * FROM {schema}.{table_name} ORDER BY geo, time_period;")
+            final_results = {
+                (r["geo"], r["time_period"]): (r["obs_value"], r["obs_flags"])
+                for r in cur.fetchall()
+            }
+
+        # Assert total rows: original (5) - removed (2) + added (2) = 5.
+        # MERGE does not delete, so EU27_2020 remains.
+        # Initial: EU27(2), DE(2), FR(1) = 5
+        # Modified: DE(2), FR(1), IT(2) = 5
+        # After Merge: EU27(2), DE(2, updated), FR(1), IT(2) = 7
+        assert len(final_results) == 7
+
+        # Assert DE 2022 was updated
+        assert final_results[("DE", "2022")] == (15.0, "p")
+        # Assert DE 2021 is unchanged
+        assert final_results[("DE", "2021")] == (11.8, "c")
+        # Assert FR is unchanged
+        assert final_results[("FR", "2021")] == (8.2, None)
+        # Assert IT (new) was inserted
+        assert final_results[("IT", "2022")] == (7.5, None)
+        # Assert EU27_2020 (not in 2nd load) still exists
+        assert final_results[("EU27_2020", "2022")] == (10.0, None)
+
+    finally:
+        # Clean up
         if loader.conn and not loader.conn.closed:
             with loader.conn.cursor() as cur:
                 cur.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE;")

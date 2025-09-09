@@ -394,7 +394,17 @@ class PostgresLoader(LoaderInterface):
         logger.info(f"Finished COPY. Loaded {row_count} rows into staging table.")
         return staging_table, row_count
 
-    def finalize_load(self, staging_table: str, target_table: str, schema: str) -> None:
+    def finalize_load(
+        self, staging_table: str, target_table: str, schema: str, strategy: str
+    ) -> None:
+        if strategy.lower() == "swap":
+            self._finalize_swap(staging_table, target_table, schema)
+        elif strategy.lower() == "merge":
+            self._finalize_merge(staging_table, target_table, schema)
+        else:
+            raise ValueError(f"Unknown finalization strategy: '{strategy}'")
+
+    def _finalize_swap(self, staging_table: str, target_table: str, schema: str) -> None:
         logger.info(
             f"Finalizing load from '{staging_table}' to '{target_table}' "
             "using atomic table swap."
@@ -403,16 +413,12 @@ class PostgresLoader(LoaderInterface):
 
         with self.conn.transaction():
             with self.conn.cursor() as cur:
-                # 1. Drop the old backup table if it exists from a previous failed run
                 cur.execute(
                     sql.SQL("DROP TABLE IF EXISTS {schema}.{backup} CASCADE").format(
                         schema=sql.Identifier(schema),
                         backup=sql.Identifier(backup_table),
                     )
                 )
-
-                # 2. Rename the current target table to the backup table
-                # IF a target table actually exists.
                 cur.execute(
                     sql.SQL(
                         "ALTER TABLE IF EXISTS {schema}.{target} RENAME TO {backup}"
@@ -422,8 +428,6 @@ class PostgresLoader(LoaderInterface):
                         backup=sql.Identifier(backup_table),
                     )
                 )
-
-                # 3. Rename the staging table to become the new target table
                 cur.execute(
                     sql.SQL("ALTER TABLE {schema}.{staging} RENAME TO {target}").format(
                         schema=sql.Identifier(schema),
@@ -431,16 +435,61 @@ class PostgresLoader(LoaderInterface):
                         target=sql.Identifier(target_table),
                     )
                 )
-
-                # 4. Drop the old backup table.
                 cur.execute(
                     sql.SQL("DROP TABLE IF EXISTS {schema}.{backup} CASCADE").format(
                         schema=sql.Identifier(schema),
                         backup=sql.Identifier(backup_table),
                     )
                 )
-
         logger.info("Load finalized successfully. Tables swapped.")
+
+    def _finalize_merge(self, staging_table: str, target_table: str, schema: str) -> None:
+        if not self.dsd:
+            raise RuntimeError("DSD must be set to perform a merge.")
+
+        logger.info(
+            f"Finalizing load from '{staging_table}' to '{target_table}' using MERGE."
+        )
+
+        pk_cols = [dim.id for dim in self.dsd.dimensions] + ["time_period"]
+        obs_flag_col = next(
+            (attr.id for attr in self.dsd.attributes if "FLAG" in attr.id.upper()),
+            "obs_flags",
+        )
+        update_cols = [self.dsd.primary_measure_id, obs_flag_col]
+
+        set_expressions = sql.SQL(", ").join(
+            [
+                sql.SQL("{col} = EXCLUDED.{col}").format(col=sql.Identifier(col))
+                for col in update_cols
+            ]
+        )
+
+        with self.conn.transaction():
+            with self.conn.cursor() as cur:
+                merge_sql = sql.SQL(
+                    """
+                    INSERT INTO {schema}.{target}
+                    SELECT * FROM {schema}.{staging}
+                    ON CONFLICT ({pk_cols}) DO UPDATE SET {set_expressions};
+                    """
+                ).format(
+                    schema=sql.Identifier(schema),
+                    target=sql.Identifier(target_table),
+                    staging=sql.Identifier(staging_table),
+                    pk_cols=sql.SQL(", ").join(map(sql.Identifier, pk_cols)),
+                    set_expressions=set_expressions,
+                )
+                cur.execute(merge_sql)
+                row_count = cur.rowcount
+                logger.info(f"Merge complete. {row_count} rows inserted or updated.")
+                cur.execute(
+                    sql.SQL("DROP TABLE {schema}.{staging}").format(
+                        schema=sql.Identifier(schema),
+                        staging=sql.Identifier(staging_table),
+                    )
+                )
+        logger.info("Load finalized successfully using MERGE strategy.")
 
     def get_ingestion_state(
         self, dataset_id: str, schema: str

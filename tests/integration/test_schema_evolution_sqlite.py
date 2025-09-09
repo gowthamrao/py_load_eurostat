@@ -75,7 +75,7 @@ def test_schema_evolution_and_data_loading(db_settings: DatabaseSettings):
         )
 
     staging_v1, rows_v1 = loader.bulk_load_staging(table_name, schema, stream_gen_v1())
-    loader.finalize_load(staging_v1, table_name, schema)
+    loader.finalize_load(staging_v1, table_name, schema, strategy="swap")
     assert rows_v1 == 1
 
     # 3. Verify initial data
@@ -122,7 +122,7 @@ def test_schema_evolution_and_data_loading(db_settings: DatabaseSettings):
     staging_v2, rows_v2 = loader.bulk_load_staging(
         table_name, schema, stream_gen_full()
     )
-    loader.finalize_load(staging_v2, table_name, schema)
+    loader.finalize_load(staging_v2, table_name, schema, strategy="swap")
     assert rows_v2 == 2
 
     # 5. Verify evolved state and data integrity
