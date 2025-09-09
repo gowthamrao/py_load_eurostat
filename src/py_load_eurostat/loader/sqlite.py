@@ -46,15 +46,60 @@ class SQLiteLoader(LoaderInterface):
         return f"{schema}__{table_name}"
 
     def _get_required_columns(self, dsd: DSD) -> Dict[str, str]:
-        """Generates a dictionary of required columns and their SQL types from a DSD."""
+        """
+        Generates a dictionary of required columns and their SQLite types from a DSD.
+        """
+        type_map = {
+            "String": "TEXT",
+            "Text": "TEXT",
+            "Double": "REAL",
+            "Float": "REAL",
+            "Integer": "INTEGER",
+            "Long": "INTEGER",
+            "Short": "INTEGER",
+            "Boolean": "INTEGER",  # 0 or 1
+            "Date": "TEXT",
+            "Time": "TEXT",
+            "DateTime": "TEXT",
+            "Year": "INTEGER",
+            "Month": "TEXT",
+            "Day": "TEXT",
+            "TimePeriod": "TEXT",
+            "ObservationalTimePeriod": "TEXT",
+            "AnyURI": "TEXT",
+            "Count": "INTEGER",
+            "Decimal": "REAL",
+            "BigInteger": "INTEGER",
+            "PositiveInteger": "INTEGER",
+        }
+        columns = {}
+
+        for dim in dsd.dimensions:
+            sdmx_type = str(dim.data_type) if dim.data_type else "String"
+            sqlite_type = type_map.get(sdmx_type, "TEXT")
+            columns[dim.id] = sqlite_type
+
+        primary_measure = next(
+            (m for m in dsd.measures if m.id == dsd.primary_measure_id), None
+        )
+        if primary_measure:
+            sdmx_type = (
+                str(primary_measure.data_type)
+                if primary_measure.data_type
+                else "Double"
+            )
+            sqlite_type = type_map.get(sdmx_type, "REAL")
+            columns[primary_measure.id] = sqlite_type
+        else:
+            columns[dsd.primary_measure_id] = "REAL"
+
         obs_flag_col_name = next(
             (attr.id for attr in dsd.attributes if "FLAG" in attr.id.upper()),
             "obs_flags",
         )
-        columns = {dim.id: "TEXT" for dim in dsd.dimensions}
-        columns["time_period"] = "TEXT"
-        columns[dsd.primary_measure_id] = "REAL"
         columns[obs_flag_col_name] = "TEXT"
+        columns["time_period"] = "TEXT"
+
         return columns
 
     def _table_exists(self, table_fqn: str, cur: sqlite3.Cursor) -> bool:
@@ -189,10 +234,8 @@ class SQLiteLoader(LoaderInterface):
 
             col_names = dim_order + ["time_period", self.dsd.primary_measure_id, obs_flag_col_name]
             placeholders = ", ".join(["?"] * len(col_names))
-            sql = (
-                f"INSERT INTO {staging_table} ({', '.join(f'`{c}`' for c in col_names)})"
-                f" VALUES ({placeholders})"
-            )
+            quoted_col_names = ", ".join(f'"{c}"' for c in col_names)
+            sql = f"INSERT INTO {staging_table} ({quoted_col_names}) VALUES ({placeholders})"
 
             cursor = cur.executemany(sql, data_generator(data_stream))
             row_count = cursor.rowcount

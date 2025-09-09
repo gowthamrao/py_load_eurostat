@@ -63,14 +63,17 @@ def test_sdmx_parser_dsd(mocker):
     dsd = parser.parse_dsd_from_dataflow(Path("dummy_path.xml"))
 
     # 3. Assert
-    assert dsd.id == "dsd_id"
+    assert dsd.id == "DSD_ID"
+    assert dsd.name == "Test DSD"
     assert len(dsd.dimensions) == 2
-    assert dsd.dimensions[0].id == "geo"
+    assert dsd.dimensions[0].id == "GEO"
     assert dsd.dimensions[0].codelist_id == "CL_GEO"
-    assert dsd.dimensions[1].id == "time_period"
-    assert dsd.primary_measure_id == "obs_value"
+    assert dsd.dimensions[1].id == "TIME_PERIOD"
+    assert dsd.primary_measure_id == "OBS_VALUE"
     assert len(dsd.attributes) == 1
-    assert dsd.attributes[0].id == "obs_flag"
+    assert dsd.attributes[0].id == "OBS_FLAG"
+    assert len(dsd.measures) == 1
+    assert dsd.measures[0].id == "OBS_VALUE"
 
 
 def test_sdmx_parser_codelist(mocker):

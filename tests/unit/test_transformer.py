@@ -15,11 +15,15 @@ FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 @pytest.fixture
 def mock_dsd() -> DSD:
     """Provides a mock DSD object for testing."""
+    from py_load_eurostat.models import Measure
+
     return DSD(
         id="DSD_TPS00001",
+        name="Test DSD",
         version="1.0",
-        dimensions=[Dimension(id="geo", codelist_id="CL_GEO", position=1)],
+        dimensions=[Dimension(id="geo", name="Geo", codelist_id="CL_GEO", position=1)],
         attributes=[],
+        measures=[Measure(id="OBS_VALUE", name="Observation Value")],
         primary_measure_id="OBS_VALUE",
     )
 
