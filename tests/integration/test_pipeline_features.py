@@ -79,14 +79,18 @@ def test_codelist_loading(
 @pytest.fixture
 def sample_dsd() -> DSD:
     """Provides a sample DSD object for testing."""
+    from py_load_eurostat.models import Measure
+
     return DSD(
         id="SAMPLE_DSD",
+        name="Sample DSD",
         version="1.0",
         dimensions=[
-            Dimension(id="geo", position=0, codelist_id="cl_geo"),
-            Dimension(id="indic_de", position=1, codelist_id=None),
+            Dimension(id="geo", name="Geo", position=0, codelist_id="cl_geo"),
+            Dimension(id="indic_de", name="Indicator", position=1, codelist_id=None),
         ],
-        attributes=[Attribute(id="obs_flags")],
+        attributes=[Attribute(id="obs_flags", name="Observation Flags")],
+        measures=[Measure(id="obs_value", name="Observation Value")],
         primary_measure_id="obs_value",
     )
 

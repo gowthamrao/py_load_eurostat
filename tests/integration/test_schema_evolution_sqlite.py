@@ -30,24 +30,32 @@ def test_schema_evolution_and_data_loading(db_settings: DatabaseSettings):
     5. Correctly retrieve data from both loads.
     """
     # 1. Define initial and evolved DSDs
+    from py_load_eurostat.models import Measure
+
     initial_dsd = DSD(
         id="test_dsd",
+        name="Test DSD",
         version="1.0",
         dimensions=[
-            Dimension(id="dim1", codelist_id="cl1", position=1),
+            Dimension(id="dim1", name="Dimension 1", codelist_id="cl1", position=1),
         ],
         attributes=[],
+        measures=[Measure(id="obs_value", name="Observation Value")],
         primary_measure_id="obs_value",
     )
 
     evolved_dsd = DSD(
         id="test_dsd",
+        name="Test DSD",
         version="2.0",
         dimensions=[
-            Dimension(id="dim1", codelist_id="cl1", position=1),
-            Dimension(id="new_dim", codelist_id="cl2", position=2), # New dimension
+            Dimension(id="dim1", name="Dimension 1", codelist_id="cl1", position=1),
+            Dimension(
+                id="new_dim", name="New Dimension", codelist_id="cl2", position=2
+            ),  # New dimension
         ],
         attributes=[],
+        measures=[Measure(id="obs_value", name="Observation Value")],
         primary_measure_id="obs_value",
     )
 

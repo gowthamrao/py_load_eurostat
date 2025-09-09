@@ -48,15 +48,82 @@ class PostgresLoader(LoaderInterface):
             raise
 
     def _get_required_columns(self, dsd: DSD) -> Dict[str, str]:
-        """Generates a dictionary of required columns and their SQL types from a DSD."""
+        """
+        Generates a dictionary of required columns and their SQL types from a DSD,
+        dynamically mapping data types.
+        """
+        # SDMX data types to PostgreSQL type mapping
+        type_map = {
+            "String": "TEXT",
+            "Text": "TEXT",
+            "Double": "DOUBLE PRECISION",
+            "Float": "DOUBLE PRECISION",
+            "Integer": "INTEGER",
+            "Long": "BIGINT",
+            "Short": "SMALLINT",
+            "Boolean": "BOOLEAN",
+            "Date": "DATE",
+            "Time": "TIME",
+            "DateTime": "TIMESTAMPTZ",
+            "Year": "INTEGER",
+            "Month": "TEXT",
+            "Day": "TEXT",
+            "TimePeriod": "TEXT",
+            "ObservationalTimePeriod": "TEXT",
+            "AnyURI": "TEXT",
+            "Count": "INTEGER",
+            "Decimal": "NUMERIC",
+            "BigInteger": "BIGINT",
+            "PositiveInteger": "BIGINT",
+        }
+        columns = {}
+
+        # Process Dimensions
+        for dim in dsd.dimensions:
+            sdmx_type = str(dim.data_type) if dim.data_type else "String"
+            pg_type = type_map.get(sdmx_type, "TEXT")
+            columns[dim.id] = pg_type
+            logger.debug(
+                f"Mapped dimension '{dim.id}' (SDMX type: {sdmx_type}) to "
+                f"PostgreSQL type: {pg_type}"
+            )
+
+        # Process Primary Measure
+        # Find the measure component from the DSD using the ID
+        primary_measure = next(
+            (m for m in dsd.measures if m.id == dsd.primary_measure_id), None
+        )
+        if primary_measure:
+            sdmx_type = (
+                str(primary_measure.data_type)
+                if primary_measure.data_type
+                else "Double"
+            )
+            pg_type = type_map.get(sdmx_type, "DOUBLE PRECISION")
+            columns[primary_measure.id] = pg_type
+            logger.debug(
+                f"Mapped primary measure '{primary_measure.id}' "
+                f"(SDMX type: {sdmx_type}) to PostgreSQL type: {pg_type}"
+            )
+        else:
+            # Fallback for safety, though this case should ideally not be hit
+            logger.warning(
+                f"Primary measure '{dsd.primary_measure_id}' not found in DSD "
+                "measures list. Defaulting type to DOUBLE PRECISION."
+            )
+            columns[dsd.primary_measure_id] = "DOUBLE PRECISION"
+
+        # Process Attributes (Flags) - keep as TEXT
         obs_flag_col_name = next(
             (attr.id for attr in dsd.attributes if "FLAG" in attr.id.upper()),
             "obs_flags",
         )
-        columns = {dim.id: "TEXT" for dim in dsd.dimensions}
-        columns["time_period"] = "TEXT"
-        columns[dsd.primary_measure_id] = "DOUBLE PRECISION"
         columns[obs_flag_col_name] = "TEXT"
+
+        # Time Period is a special dimension not always in the DSD component list
+        columns["time_period"] = "TEXT"
+
+        logger.info(f"Determined required columns and types: {columns}")
         return columns
 
     def _table_exists(self, table_name: str, schema: str, cur: psycopg.Cursor) -> bool:

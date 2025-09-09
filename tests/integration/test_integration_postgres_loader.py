@@ -12,7 +12,7 @@ from psycopg.rows import dict_row
 
 from py_load_eurostat.config import DatabaseSettings
 from py_load_eurostat.loader.postgresql import PostgresLoader
-from py_load_eurostat.models import DSD, Dimension, Attribute, Observation
+from py_load_eurostat.models import DSD, Dimension, Attribute, Measure, Observation
 
 
 @pytest.fixture(scope="module")
@@ -41,34 +41,53 @@ def db_settings(postgres_container: PostgresContainer) -> DatabaseSettings:
 @pytest.fixture
 def sample_dsd() -> DSD:
     """
-    Provides a sample DSD object for testing.
+    Provides a sample DSD object for testing with varied data types.
+    Using original casing as found in Eurostat DSDs.
     """
     return DSD(
         id="SAMPLE_DSD",
+        name="Sample DSD",
         version="1.0",
         dimensions=[
-            Dimension(id="geo", position=0, codelist_id="cl_geo"),
-            Dimension(id="indic_de", position=1, codelist_id="cl_indic"),
+            Dimension(
+                id="geo", name="Geo", position=0, codelist_id="CL_GEO", data_type="String"
+            ),
+            Dimension(
+                id="indic_de",
+                name="Indicator",
+                position=1,
+                codelist_id="CL_INDIC",
+                data_type="String",
+            ),
+            Dimension(
+                id="COUNT_OBS",
+                name="Count of Observations",
+                position=2,
+                data_type="Integer",
+            ),
         ],
-        attributes=[Attribute(id="OBS_FLAG")],
+        attributes=[
+            Attribute(id="OBS_FLAG", name="Observation Flag", data_type="String")
+        ],
+        measures=[Measure(id="OBS_VALUE", name="Observation Value", data_type="Double")],
         primary_measure_id="OBS_VALUE",
     )
 
 
 @pytest.fixture
-def sample_data_stream():
+def sample_data_stream(sample_dsd: DSD):
     """
     Provides a sample generator of Observation objects.
     """
     observations = [
         Observation(
-            dimensions={"geo": "DE", "indic_de": "IND1"},
+            dimensions={"geo": "DE", "indic_de": "IND1", "COUNT_OBS": "10"},
             time_period="2022",
             value=100.1,
             flags="p",
         ),
         Observation(
-            dimensions={"geo": "FR", "indic_de": "IND2"},
+            dimensions={"geo": "FR", "indic_de": "IND2", "COUNT_OBS": "20"},
             time_period="2023",
             value=200.2,
             flags="e",
@@ -87,9 +106,9 @@ def test_postgres_loader_end_to_end(
 ):
     """
     Tests the full lifecycle of the PostgresLoader:
-    1. Prepare schema and table
-    2. Bulk load data into a staging table
-    3. Finalize the load with an atomic table swap
+    1. Prepare schema and table, including verifying column data types.
+    2. Bulk load data into a staging table.
+    3. Finalize the load with an atomic table swap.
     """
     loader = PostgresLoader(db_settings)
     schema = "test_data"
@@ -99,12 +118,36 @@ def test_postgres_loader_end_to_end(
         # 1. Prepare schema
         loader.prepare_schema(dsd=sample_dsd, table_name=table_name, schema=schema)
 
+        # --- Schema Verification Logic ---
+        with loader.conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT column_name, data_type
+                FROM information_schema.columns
+                WHERE table_schema = %s AND table_name = %s;
+                """,
+                (schema, table_name),
+            )
+            columns_in_db = {row["column_name"]: row["data_type"] for row in cur.fetchall()}
+
+        expected_types = {
+            "geo": "text",
+            "indic_de": "text",
+            "COUNT_OBS": "integer",
+            "time_period": "text",
+            "OBS_VALUE": "double precision",
+            "OBS_FLAG": "text",
+        }
+
+        assert columns_in_db == expected_types
+        # --- End of Schema Verification Logic ---
+
         # 2. Bulk load to staging
         staging_table, rows_loaded = loader.bulk_load_staging(
             table_name=table_name,
             schema=schema,
             data_stream=sample_data_stream,
-            use_unlogged_table=False,  # Use logged table for simplicity in test
+            use_unlogged_table=False,
         )
         assert rows_loaded == 2
         assert staging_table.startswith("staging_")
@@ -114,7 +157,6 @@ def test_postgres_loader_end_to_end(
 
         # 4. Verification
         with loader.conn.cursor(row_factory=dict_row) as cur:
-            # Check if target table exists and has correct data
             cur.execute(f"SELECT * FROM {schema}.{table_name} ORDER BY geo;")
             results = cur.fetchall()
             assert len(results) == 2
@@ -124,21 +166,17 @@ def test_postgres_loader_end_to_end(
             assert results[1]["OBS_VALUE"] == 200.2
 
             # Check if staging table was dropped
-            cur.execute(
-                "SELECT to_regclass(%s) as oid;", (f"{schema}.{staging_table}",)
-            )
-            result = cur.fetchone()
-            assert result["oid"] is None
+            cur.execute("SELECT to_regclass(%s) as oid;", (f"{schema}.{staging_table}",))
+            assert cur.fetchone()["oid"] is None
 
             # Check if backup table was dropped
             backup_table = f"{table_name}_old"
             cur.execute("SELECT to_regclass(%s) as oid;", (f"{schema}.{backup_table}",))
-            result = cur.fetchone()
-            # The backup table should definitely not exist and return a row
-            assert result["oid"] is None
+            assert cur.fetchone()["oid"] is None
 
     finally:
         # Clean up created schema
-        with loader.conn.cursor() as cur:
-            cur.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE;")
-        loader.close_connection()
+        if loader.conn and not loader.conn.closed:
+            with loader.conn.cursor() as cur:
+                cur.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE;")
+            loader.close_connection()

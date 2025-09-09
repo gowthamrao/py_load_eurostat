@@ -22,7 +22,7 @@ from pysdmx.model.dataflow import (
     Role,
 )
 
-from .models import DSD, Attribute, Code, Codelist, Dimension
+from .models import DSD, Attribute, Code, Codelist, Dimension, Measure
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +65,7 @@ class SdmxParser:
 
         dimensions: list[Dimension] = []
         attributes: list[Attribute] = []
+        measures: list[Measure] = []
         primary_measure_id = "obs_value"  # Default
 
         # Hotfix: pysdmx does not seem to reliably expose the codelist reference
@@ -73,32 +74,47 @@ class SdmxParser:
         dim_to_cl_map = self._extract_codelist_map_from_xml(sdmx_path)
 
         for i, component in enumerate(dsd_node.components):
+            # Extract data type, default to String if not present
+            data_type = str(component.dtype) if component.dtype else "String"
+
             if component.role == Role.DIMENSION:
-                dim_id_lower = component.id.lower()
                 dimensions.append(
                     Dimension(
-                        id=dim_id_lower,
-                        codelist_id=dim_to_cl_map.get(dim_id_lower),
+                        id=component.id,
+                        name=component.name,
+                        codelist_id=dim_to_cl_map.get(component.id.lower()),
                         position=i,
+                        data_type=data_type,
                     )
                 )
             elif component.role == Role.ATTRIBUTE:
                 attributes.append(
                     Attribute(
-                        id=component.id.lower(),
+                        id=component.id,
+                        name=component.name,
                         codelist_id=component.enumeration.id
                         if component.enumeration
                         else None,
+                        data_type=data_type,
                     )
                 )
             elif component.role == Role.MEASURE:
-                primary_measure_id = component.id.lower()
+                primary_measure_id = component.id
+                measures.append(
+                    Measure(
+                        id=primary_measure_id,
+                        name=component.name,
+                        data_type=data_type,
+                    )
+                )
 
         return DSD(
-            id=dsd_node.id.lower(),
+            id=dsd_node.id,
+            name=dsd_node.name,
             version=dsd_node.version,
             dimensions=sorted(dimensions, key=lambda d: d.position),
             attributes=attributes,
+            measures=measures,
             primary_measure_id=primary_measure_id,
         )
 
