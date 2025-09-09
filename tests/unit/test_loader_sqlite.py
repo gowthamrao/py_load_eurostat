@@ -118,7 +118,7 @@ class TestSQLiteLoader:
             assert res[0] == 2
 
             # 4. Finalize Load
-            loader.finalize_load(staging_table, table_name, data_schema)
+            loader.finalize_load(staging_table, table_name, data_schema, strategy="swap")
             res = conn.execute(f"SELECT COUNT(*) FROM {data_table_fqn}").fetchone()
             assert res[0] == 2
             res = conn.execute(

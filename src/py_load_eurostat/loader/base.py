@@ -69,15 +69,18 @@ class LoaderInterface(ABC):
         pass
 
     @abstractmethod
-    def finalize_load(self, staging_table: str, target_table: str, schema: str) -> None:
+    def finalize_load(
+        self, staging_table: str, target_table: str, schema: str, strategy: str
+    ) -> None:
         """
-        Atomically replaces the data in the target table with the data
-        from the staging table within a transaction.
+        Atomically merges or replaces the data in the target table with the
+        data from the staging table within a transaction.
 
         Args:
             staging_table: The name of the staging table.
             target_table: The name of the final target table.
             schema: The database schema where the tables reside.
+            strategy: The finalization strategy to use ('swap' or 'merge').
         """
         pass
 

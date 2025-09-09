@@ -119,9 +119,12 @@ def run_pipeline(dataset_id: str, representation: str, load_strategy: str) -> No
         history_record.rows_loaded = rows_loaded
 
         # 7. Finalize load
-        loader.finalize_load(staging_table, table_name, data_schema)
+        finalize_strategy = "merge" if load_strategy.lower() == "delta" else "swap"
+        loader.finalize_load(
+            staging_table, table_name, data_schema, strategy=finalize_strategy
+        )
 
-        # 7. Record successful ingestion
+        # 8. Record successful ingestion
         if history_record:
             history_record.status = IngestionStatus.SUCCESS
             history_record.end_time = datetime.now(timezone.utc)

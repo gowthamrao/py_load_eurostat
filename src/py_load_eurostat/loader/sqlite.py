@@ -269,9 +269,16 @@ class SQLiteLoader(LoaderInterface):
         logger.info(f"Finished loading (executemany). Loaded {row_count} rows.")
         return staging_table, row_count
 
-    def finalize_load(self, staging_table: str, target_table: str, schema: str) -> None:
+    def finalize_load(
+        self, staging_table: str, target_table: str, schema: str, strategy: str
+    ) -> None:
+        if strategy.lower() != "swap":
+            raise ValueError(f"SQLiteLoader only supports 'swap' strategy, not '{strategy}'")
+
         target_fqn = self._fqn(schema, target_table)
-        logger.info(f"Finalizing load from '{staging_table}' to '{target_fqn}'.")
+        logger.info(
+            f"Finalizing load from '{staging_table}' to '{target_fqn}' using swap."
+        )
 
         cur = self.conn.cursor()
         try:
