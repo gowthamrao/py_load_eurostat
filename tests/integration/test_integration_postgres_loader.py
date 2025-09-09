@@ -7,12 +7,12 @@ swap logic in finalize_load work as expected.
 """
 
 import pytest
-from testcontainers.postgres import PostgresContainer
 from psycopg.rows import dict_row
+from testcontainers.postgres import PostgresContainer
 
 from py_load_eurostat.config import DatabaseSettings
 from py_load_eurostat.loader.postgresql import PostgresLoader
-from py_load_eurostat.models import DSD, Dimension, Attribute, Measure, Observation
+from py_load_eurostat.models import DSD, Attribute, Dimension, Measure, Observation
 
 
 @pytest.fixture(scope="module")
@@ -50,7 +50,11 @@ def sample_dsd() -> DSD:
         version="1.0",
         dimensions=[
             Dimension(
-                id="geo", name="Geo", position=0, codelist_id="CL_GEO", data_type="String"
+                id="geo",
+                name="Geo",
+                position=0,
+                codelist_id="CL_GEO",
+                data_type="String",
             ),
             Dimension(
                 id="indic_de",
@@ -69,7 +73,9 @@ def sample_dsd() -> DSD:
         attributes=[
             Attribute(id="OBS_FLAG", name="Observation Flag", data_type="String")
         ],
-        measures=[Measure(id="OBS_VALUE", name="Observation Value", data_type="Double")],
+        measures=[
+            Measure(id="OBS_VALUE", name="Observation Value", data_type="Double")
+        ],
         primary_measure_id="OBS_VALUE",
     )
 
@@ -128,7 +134,9 @@ def test_postgres_loader_end_to_end(
                 """,
                 (schema, table_name),
             )
-            columns_in_db = {row["column_name"]: row["data_type"] for row in cur.fetchall()}
+            columns_in_db = {
+                row["column_name"]: row["data_type"] for row in cur.fetchall()
+            }
 
         expected_types = {
             "geo": "text",
@@ -166,7 +174,9 @@ def test_postgres_loader_end_to_end(
             assert results[1]["OBS_VALUE"] == 200.2
 
             # Check if staging table was dropped
-            cur.execute("SELECT to_regclass(%s) as oid;", (f"{schema}.{staging_table}",))
+            cur.execute(
+                "SELECT to_regclass(%s) as oid;", (f"{schema}.{staging_table}",)
+            )
             assert cur.fetchone()["oid"] is None
 
             # Check if backup table was dropped

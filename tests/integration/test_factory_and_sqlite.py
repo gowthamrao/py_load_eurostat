@@ -1,6 +1,7 @@
 """
 Integration tests for the SQLite loader and the main pipeline factory function.
 """
+
 import sqlite3
 from pathlib import Path
 
@@ -9,7 +10,7 @@ import pytest
 from py_load_eurostat import pipeline
 from py_load_eurostat.config import AppSettings
 from py_load_eurostat.fetcher import Fetcher
-from py_load_eurostat.models import DSD, Dimension, Attribute, Measure
+from py_load_eurostat.models import DSD, Attribute, Dimension, Measure
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
@@ -17,19 +18,15 @@ FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 @pytest.fixture
 def correct_dsd_for_tps00001() -> DSD:
     """
-    A fixture that provides a *correct* DSD for the tps00001 dataset.
-    The dsd_tps00001_simple.xml fixture is intentionally incomplete to test
-    PK violations, but for this pipeline test, we need a correct DSD.
+    A fixture that provides a DSD for the tps00001 dataset that matches
+    the simplified TSV data in the fixtures.
     """
     return DSD(
         id="TPS00001",
         name="GDP per capita in PPS",
         version="1.0",
         dimensions=[
-            Dimension(id="unit", name="Unit", position=0),
-            Dimension(id="sex", name="Sex", position=1),
-            Dimension(id="age", name="Age", position=2),
-            Dimension(id="geo", name="Geo", position=3, codelist_id="CL_GEO"),
+            Dimension(id="geo", name="Geo", position=0, codelist_id="CL_GEO"),
         ],
         attributes=[Attribute(id="OBS_FLAG", name="Observation Flag")],
         measures=[Measure(id="OBS_VALUE", name="Observation Value")],

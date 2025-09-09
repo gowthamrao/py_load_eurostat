@@ -16,51 +16,71 @@ app = typer.Typer(
     add_completion=False,
 )
 
-# Define common options as Annotated types for reuse and clarity
-DatasetIDOption = typer.Option(
-    ...,  # ... means this is a required option
-    "--dataset-id",
-    "-d",
-    help="The Eurostat dataset identifier (e.g., 'nama_10_gdp').",
-)
-
-RepresentationOption = typer.Option(
-    "Standard",
-    "--representation",
-    "-r",
-    help="The data representation: 'Standard' (coded) or 'Full' (labeled).",
-)
-
-LoadStrategyOption = typer.Option(
-    "Full",
-    "--load-strategy",
-    "-s",
-    help=(
-        "The load strategy: 'Full' (replaces entire dataset) or 'Delta' "
-        "(loads if source is newer)."
-    ),
-)
-
-
 @app.command()
 def run(
-    dataset_id: Annotated[str, DatasetIDOption],
-    representation: Annotated[str, RepresentationOption],
-    load_strategy: Annotated[str, LoadStrategyOption],
-):
+    dataset_id: Annotated[
+        str,
+        typer.Option(
+            ...,
+            "--dataset-id",
+            "-d",
+            help="The Eurostat dataset identifier (e.g., 'nama_10_gdp').",
+        ),
+    ],
+    representation: Annotated[
+        str,
+        typer.Option(
+            "Standard",
+            "--representation",
+            "-r",
+            help="The data representation: 'Standard' (coded) or 'Full' (labeled).",
+        ),
+    ],
+    load_strategy: Annotated[
+        str,
+        typer.Option(
+            "Full",
+            "--load-strategy",
+            "-s",
+            help=(
+                "The load strategy: 'Full' (replaces entire dataset) or 'Delta' "
+                "(loads if source is newer)."
+            ),
+        ),
+    ],
+    use_unlogged_tables: Annotated[
+        bool,
+        typer.Option(
+            True,
+            "--use-unlogged-tables/--no-use-unlogged-tables",
+            help=(
+                "Enable/disable using UNLOGGED tables for staging in PostgreSQL. "
+                "Overrides env var."
+            ),
+        ),
+    ],
+) -> None:
     """
     Run the full ingestion pipeline for a single Eurostat dataset.
     """
+    # Import settings here to allow CLI to override them
+    from .config import settings
+
     # Basic logging setup for the CLI
     log_format = "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
     logging.basicConfig(level=logging.INFO, format=log_format)
 
+    # The CLI option takes precedence over the environment variable.
+    # We directly override the setting that the pipeline will use.
+    if use_unlogged_tables is not None:
+        settings.db.use_unlogged_tables = use_unlogged_tables
+
     typer.echo(f"Starting pipeline for dataset: {dataset_id}")
     typer.echo(f"  - Representation: {representation}")
     typer.echo(f"  - Load Strategy: {load_strategy}")
+    typer.echo(f"  - Use UNLOGGED tables: {settings.db.use_unlogged_tables}")
 
     # Here we will call the main pipeline orchestrator
-    # For now, this is a placeholder.
     try:
         from .pipeline import run_pipeline
 

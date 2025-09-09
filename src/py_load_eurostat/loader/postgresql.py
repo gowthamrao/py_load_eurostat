@@ -37,6 +37,8 @@ class PostgresLoader(LoaderInterface):
         try:
             conn_info = self.settings.model_dump()
             conn_info["dbname"] = conn_info.pop("name")
+            # Remove our custom setting before passing to the database driver
+            conn_info.pop("use_unlogged_tables", None)
             conn = psycopg.connect(**conn_info)
             logger.info(
                 "Successfully connected to PostgreSQL database "
@@ -128,14 +130,19 @@ class PostgresLoader(LoaderInterface):
 
     def _table_exists(self, table_name: str, schema: str, cur: psycopg.Cursor) -> bool:
         """Checks if a table exists in the given schema."""
-        query = sql.SQL("""
+        query = sql.SQL(
+            """
             SELECT EXISTS (
                 SELECT FROM information_schema.tables
                 WHERE table_schema = %s AND table_name = %s
             );
-        """)
+        """
+        )
         cur.execute(query, (schema, table_name))
-        return cur.fetchone()[0]
+        result = cur.fetchone()
+        if result:
+            return bool(result[0])
+        return False
 
     def _get_existing_columns(
         self, table_name: str, schema: str, cur: psycopg.Cursor

@@ -48,7 +48,9 @@ class Dimension(BaseModel):
     """Represents a dimension in an SDMX Data Structure Definition (DSD)."""
 
     id: str = Field(description="The unique ID of the dimension (e.g., 'GEO').")
-    name: Optional[str] = Field(default=None, description="The human-readable name of the dimension.")
+    name: Optional[str] = Field(
+        default=None, description="The human-readable name of the dimension."
+    )
     codelist_id: Optional[str] = Field(
         default=None,
         description="The ID of the code list associated with this dimension, if any.",
@@ -57,7 +59,8 @@ class Dimension(BaseModel):
         description="The order of the dimension in the dataset's key."
     )
     data_type: Optional[str] = Field(
-        default=None, description="The SDMX data type of the dimension (e.g., 'String')."
+        default=None,
+        description="The SDMX data type of the dimension (e.g., 'String').",
     )
 
 
@@ -65,12 +68,15 @@ class Attribute(BaseModel):
     """Represents an attribute in an SDMX Data Structure Definition (DSD)."""
 
     id: str = Field(description="The unique ID of the attribute (e.g., 'OBS_FLAG').")
-    name: Optional[str] = Field(default=None, description="The human-readable name of the attribute.")
+    name: Optional[str] = Field(
+        default=None, description="The human-readable name of the attribute."
+    )
     codelist_id: Optional[str] = Field(
         default=None, description="The ID of the code list for this attribute, if any."
     )
     data_type: Optional[str] = Field(
-        default=None, description="The SDMX data type of the attribute (e.g., 'String')."
+        default=None,
+        description="The SDMX data type of the attribute (e.g., 'String').",
     )
 
 
@@ -78,7 +84,9 @@ class Measure(BaseModel):
     """Represents a measure in an SDMX Data Structure Definition (DSD)."""
 
     id: str = Field(description="The unique ID of the measure (e.g., 'OBS_VALUE').")
-    name: Optional[str] = Field(default=None, description="The human-readable name of the measure.")
+    name: Optional[str] = Field(
+        default=None, description="The human-readable name of the measure."
+    )
     data_type: Optional[str] = Field(
         default=None, description="The SDMX data type of the measure (e.g., 'Double')."
     )
@@ -88,7 +96,9 @@ class DSD(BaseModel):
     """Represents a Data Structure Definition (DSD)."""
 
     id: str = Field(description="The unique ID of the DSD.")
-    name: Optional[str] = Field(default=None, description="The human-readable name of the DSD.")
+    name: Optional[str] = Field(
+        default=None, description="The human-readable name of the DSD."
+    )
     version: str = Field(description="The version of the DSD.")
     dimensions: List[Dimension] = Field(
         description="The list of dimensions in the DSD."

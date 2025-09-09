@@ -6,7 +6,6 @@ loader) to execute the end-to-end data ingestion process.
 """
 
 import logging
-import logging
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -112,7 +111,10 @@ def run_pipeline(dataset_id: str, representation: str, load_strategy: str) -> No
         )
 
         staging_table, rows_loaded = loader.bulk_load_staging(
-            table_name=table_name, schema=data_schema, data_stream=data_stream
+            table_name=table_name,
+            schema=data_schema,
+            data_stream=data_stream,
+            use_unlogged_table=settings.db.use_unlogged_tables,
         )
         history_record.rows_loaded = rows_loaded
 

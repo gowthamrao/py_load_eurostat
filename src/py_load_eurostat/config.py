@@ -36,6 +36,12 @@ class DatabaseSettings(BaseSettings):
     name: str = Field(
         default="eurostat", description="The name of the database to connect to."
     )
+    use_unlogged_tables: bool = Field(
+        default=True,
+        description=(
+            "For PostgreSQL, use UNLOGGED tables for staging to improve performance."
+        ),
+    )
 
 
 class CacheSettings(BaseSettings):

@@ -17,8 +17,9 @@ import pandas as pd
 from pysdmx.io import read_sdmx
 from pysdmx.model.code import Codelist as PysdmxCodelist
 from pysdmx.model.dataflow import (
-    Component,
     DataStructureDefinition as PysdmxDSD,
+)
+from pysdmx.model.dataflow import (
     Role,
 )
 
@@ -203,14 +204,17 @@ class TsvParser:
         with gzip.open(self.tsv_path, "rt", encoding="utf-8") as f:
             header_line = f.readline().strip()
 
-        header_parts = header_line.split("\t")
-        dim_header = header_parts[0]
-        dimension_cols = [d.strip() for d in dim_header.split(",")]
-        if dimension_cols and "\\" in dimension_cols[-1]:
-            last_dim_parts = dimension_cols[-1].split("\\")
-            dimension_cols[-1] = last_dim_parts[0]
+        # The first part of the header contains dimensions, separated by ',',
+        # with a '\time' suffix. e.g., "sex,age,geo\time"
+        dim_header_part, time_header_part = header_line.split("\t", 1)
+        if "\\" not in dim_header_part:
+            raise ValueError(f"Invalid TSV header format: {header_line}")
 
-        time_period_cols = [p.strip() for p in header_parts[1:]]
+        # Remove the '\time' suffix to isolate the dimension names
+        dims_only_str = dim_header_part.split("\\")[0]
+        dimension_cols = [d.strip() for d in dims_only_str.split(",")]
+
+        time_period_cols = [p.strip() for p in time_header_part.split("\t")]
 
         # 2. Create a streaming reader (iterator) for the data
         df_iterator = pd.read_csv(
@@ -232,9 +236,27 @@ class TsvParser:
                 chunk.rename(
                     columns={chunk.columns[0]: "dimensions_combined"}, inplace=True
                 )
-                # Split the combined dimension column into separate columns
-                dims_df = chunk["dimensions_combined"].str.split(",", expand=True)
-                dims_df.columns = dimension_cols[: dims_df.shape[1]]
+                # Use a robust method to split the combined dimension column,
+                # as values themselves can contain commas if they are quoted.
+                # A simple string split is not sufficient.
+                def parse_eurostat_dims(dim_string: str) -> list[str]:
+                    import csv
+                    from io import StringIO
+
+                    if not isinstance(dim_string, str):
+                        return [None] * len(dimension_cols)
+                    # The csv module correctly handles quoted fields.
+                    return next(csv.reader(StringIO(dim_string)))
+
+                parsed_dims = chunk["dimensions_combined"].apply(parse_eurostat_dims)
+
+                # Create a new DataFrame from the parsed dimensions.
+                # This ensures the correct number of columns.
+                dims_df = pd.DataFrame(
+                    parsed_dims.tolist(),
+                    index=chunk.index,
+                    columns=dimension_cols,
+                )
 
                 # Combine the new dimension columns with the time period data
                 processed_chunk = pd.concat([dims_df, chunk[time_period_cols]], axis=1)
