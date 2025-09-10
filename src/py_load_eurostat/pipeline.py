@@ -64,6 +64,8 @@ def run_pipeline(dataset_id: str, representation: str, load_strategy: str) -> No
         # Update history record with info we just fetched
         history_record.source_last_update = remote_last_update
 
+        # Delta-load check requires fetching the last ingestion state
+        last_ingestion: Optional[IngestionHistory] = None
         if load_strategy.lower() == "delta":
             last_ingestion = loader.get_ingestion_state(dataset_id, meta_schema)
             if (
@@ -94,7 +96,9 @@ def run_pipeline(dataset_id: str, representation: str, load_strategy: str) -> No
 
         # 4. Prepare database schema
         table_name = f"data_{dataset_id.lower()}"
-        loader.prepare_schema(dsd, table_name, data_schema)
+        loader.prepare_schema(
+            dsd, table_name, data_schema, last_ingestion=last_ingestion
+        )
         loader.manage_codelists(codelists, meta_schema)
 
         # 5. Fetch and Parse main data file

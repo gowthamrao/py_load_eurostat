@@ -140,23 +140,46 @@ class PostgresLoader(LoaderInterface):
         )
         cur.execute(query, (schema, table_name))
         result = cur.fetchone()
-        if result:
-            return bool(result[0])
-        return False
+        return bool(result[0]) if result else False
 
-    def _get_existing_columns(
+    def _get_existing_column_types(
         self, table_name: str, schema: str, cur: psycopg.Cursor
-    ) -> set[str]:
-        """Retrieves the set of existing column names for a given table."""
-        query = sql.SQL("""
-            SELECT column_name
+    ) -> Dict[str, str]:
+        """Retrieves a dict of existing columns and their PostgreSQL types."""
+        query = sql.SQL(
+            """
+            SELECT column_name, data_type
             FROM information_schema.columns
             WHERE table_schema = %s AND table_name = %s;
-        """)
+        """
+        )
         cur.execute(query, (schema, table_name))
-        return {row[0] for row in cur.fetchall()}
+        return {row[0]: row[1] for row in cur.fetchall()}
 
-    def prepare_schema(self, dsd: DSD, table_name: str, schema: str) -> None:
+    def _normalize_pg_type(self, pg_type: str) -> str:
+        """Normalizes a PostgreSQL type string for reliable comparison."""
+        pg_type = pg_type.lower()
+        if pg_type.startswith("character varying") or pg_type.startswith("char"):
+            return "text"
+        if pg_type == "float8":
+            return "double precision"
+        if pg_type == "int8":
+            return "bigint"
+        if pg_type == "int4":
+            return "integer"
+        if pg_type == "int2":
+            return "smallint"
+        if pg_type.startswith("timestamp"):
+            return "timestamptz"
+        return pg_type
+
+    def prepare_schema(
+        self,
+        dsd: DSD,
+        table_name: str,
+        schema: str,
+        last_ingestion: Optional[IngestionHistory] = None,
+    ) -> None:
         self.dsd = dsd
         logger.info(f"Preparing schema '{schema}' and table '{table_name}'")
 
@@ -195,16 +218,46 @@ class PostgresLoader(LoaderInterface):
                     f"Table '{schema}.{table_name}' already exists. "
                     "Checking for schema evolution."
                 )
-                existing_columns = self._get_existing_columns(table_name, schema, cur)
-                missing_columns = set(required_columns.keys()) - existing_columns
-                extra_columns = existing_columns - set(required_columns.keys())
 
+                if (
+                    last_ingestion
+                    and last_ingestion.dsd_version
+                    and last_ingestion.dsd_version == dsd.version
+                ):
+                    logger.info(
+                        f"DSD version '{dsd.version}' matches the last ingested "
+                        "version. Skipping schema evolution check."
+                    )
+                    self.conn.commit()
+                    return
+
+                existing_column_types = self._get_existing_column_types(
+                    table_name, schema, cur
+                )
+                existing_columns = set(existing_column_types.keys())
+
+                # Check for data type mismatches
+                for col_name, required_type in required_columns.items():
+                    if col_name in existing_column_types:
+                        existing_type = existing_column_types[col_name]
+                        norm_exist = self._normalize_pg_type(existing_type)
+                        norm_req = self._normalize_pg_type(required_type)
+                        if norm_exist != norm_req:
+                            raise NotImplementedError(
+                                f"Data type mismatch for column '{col_name}' in "
+                                f"table '{schema}.{table_name}'. Existing type "
+                                f"'{existing_type}' is not compatible with required "
+                                f"type '{required_type}'. A full reload is required."
+                            )
+
+                # Check for missing columns
+                missing_columns = set(required_columns.keys()) - existing_columns
                 if missing_columns:
                     for col_name in missing_columns:
                         col_type = required_columns[col_name]
                         logger.info(
-                            f"Adding missing column '{col_name}' "
-                            f"with type '{col_type}' to table '{table_name}'."
+                            f"Adding missing column '{col_name}' with type "
+                            f"'{col_type}' to table '{table_name}'."
                         )
                         alter_sql = sql.SQL(
                             "ALTER TABLE {schema}.{table} "
@@ -220,6 +273,8 @@ class PostgresLoader(LoaderInterface):
                 else:
                     logger.info("No missing columns to add. Schema is up-to-date.")
 
+                # Check for extra columns that are no longer in the DSD
+                extra_columns = existing_columns - set(required_columns.keys())
                 if extra_columns:
                     logger.warning(
                         f"The following columns exist in the database but are no "

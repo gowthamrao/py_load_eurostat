@@ -313,6 +313,11 @@ def test_delta_load_with_merge_strategy(
             loader.close_connection()
 
 
+from datetime import datetime, timezone
+
+from py_load_eurostat.models import IngestionHistory
+
+
 @pytest.mark.integration
 def test_manage_codelists_insert_and_update(db_settings: DatabaseSettings):
     """
@@ -378,6 +383,83 @@ def test_manage_codelists_insert_and_update(db_settings: DatabaseSettings):
             assert results[2]["code"] == "IT"
             assert results[2]["label_en"] == "Italy"
 
+    finally:
+        # Clean up
+        if loader.conn and not loader.conn.closed:
+            with loader.conn.cursor() as cur:
+                cur.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE;")
+            loader.close_connection()
+
+
+@pytest.mark.integration
+def test_schema_evolution_raises_on_type_mismatch_in_code(
+    db_settings: DatabaseSettings,
+):
+    """
+    Verify that prepare_schema detects a data type mismatch between DSD versions
+    and raises a NotImplementedError, using DSD objects created in code.
+    """
+    loader = PostgresLoader(db_settings)
+    schema = "test_evolution_in_code"
+    table_name = "data_test_dsd"
+    dataset_id = "test_dsd"
+
+    # 1. DSD v1 object
+    dsd_v1 = DSD(
+        id="TEST_DSD",
+        name="Test DSD",
+        version="1.0",
+        dimensions=[
+            Dimension(id="geo", name="Geo", position=0, data_type="String"),
+            Dimension(id="freq", name="Frequency", position=1, data_type="String"),
+        ],
+        attributes=[Attribute(id="obs_flag", name="Flag", data_type="String")],
+        measures=[Measure(id="obs_value", name="Value", data_type="Double")],
+        primary_measure_id="obs_value",
+    )
+
+    try:
+        # 2. Initial schema preparation with DSD v1
+        loader.prepare_schema(dsd=dsd_v1, table_name=table_name, schema=schema)
+
+        # 3. Simulate a previous successful ingestion record for DSD v1
+        last_ingestion = IngestionHistory(
+            dataset_id=dataset_id,
+            dsd_version="1.0",
+            status="SUCCESS",
+            start_time=datetime.now(timezone.utc),
+            end_time=datetime.now(timezone.utc),
+            load_strategy="Full",
+            representation="Standard",
+        )
+
+        # 4. DSD v2 object with a data type change for 'geo'
+        dsd_v2 = DSD(
+            id="TEST_DSD",
+            name="Test DSD",
+            version="2.0",
+            dimensions=[
+                Dimension(id="geo", name="Geo", position=0, data_type="Integer"),
+                Dimension(id="freq", name="Frequency", position=1, data_type="String"),
+            ],
+            attributes=[Attribute(id="obs_flag", name="Flag", data_type="String")],
+            measures=[Measure(id="obs_value", name="Value", data_type="Double")],
+            primary_measure_id="obs_value",
+        )
+
+        # 5. Call prepare_schema again and assert that it raises the correct error
+        with pytest.raises(NotImplementedError) as excinfo:
+            loader.prepare_schema(
+                dsd=dsd_v2,
+                table_name=table_name,
+                schema=schema,
+                last_ingestion=last_ingestion,
+            )
+
+        assert "Data type mismatch for column 'geo'" in str(excinfo.value)
+        assert "Existing type 'text' is not compatible with required type 'INTEGER'" in str(
+            excinfo.value
+        )
     finally:
         # Clean up
         if loader.conn and not loader.conn.closed:
