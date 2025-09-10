@@ -180,12 +180,19 @@ def run_pipeline(
             for cid, path in codelist_paths.items()
         }
 
-        # 4. Prepare database schema
+        # 4. Create codelist tables first, as they are needed for FK constraints
+        loader.manage_codelists(codelists, meta_schema)
+
+        # 5. Prepare main data table schema
         table_name = f"data_{dataset_id.lower()}"
         loader.prepare_schema(
-            dsd, table_name, data_schema, last_ingestion=last_ingestion
+            dsd,
+            table_name,
+            data_schema,
+            representation,
+            meta_schema,
+            last_ingestion=last_ingestion,
         )
-        loader.manage_codelists(codelists, meta_schema)
 
         # 5. Fetch and Parse main data file
         logger.info(f"Fetching dataset TSV from {download_url}...")

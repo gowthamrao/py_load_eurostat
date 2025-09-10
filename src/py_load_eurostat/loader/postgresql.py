@@ -178,6 +178,8 @@ class PostgresLoader(LoaderInterface):
         dsd: DSD,
         table_name: str,
         schema: str,
+        representation: str,
+        meta_schema: str,
         last_ingestion: Optional[IngestionHistory] = None,
     ) -> None:
         self.dsd = dsd
@@ -281,6 +283,56 @@ class PostgresLoader(LoaderInterface):
                         f"longer in the DSD for '{table_name}': {extra_columns}. "
                         "These columns will not be dropped automatically."
                     )
+            # Add foreign key constraints if this is a 'Standard' representation
+            if representation.lower() == "standard":
+                logger.info(
+                    "Applying foreign key constraints for 'Standard' representation."
+                )
+                # Ensure the metadata schema exists before trying to reference it
+                cur.execute(
+                    sql.SQL("CREATE SCHEMA IF NOT EXISTS {schema}").format(
+                        schema=sql.Identifier(meta_schema)
+                    )
+                )
+                for dim in dsd.dimensions:
+                    if dim.codelist_id:
+                        fk_name = f"fk_{table_name}_{dim.id}"
+                        codelist_table = dim.codelist_id.lower()
+
+                        # Check if constraint already exists to ensure idempotency
+                        cur.execute(
+                            """
+                            SELECT 1 FROM information_schema.table_constraints
+                            WHERE constraint_type = 'FOREIGN KEY'
+                            AND table_name = %s AND constraint_name = %s
+                            AND table_schema = %s
+                        """,
+                            (table_name, fk_name, schema),
+                        )
+                        if cur.fetchone():
+                            logger.debug(f"Foreign key '{fk_name}' already exists.")
+                            continue
+
+                        logger.info(
+                            f"Adding foreign key '{fk_name}' to table '{table_name}' on column '{dim.id}'."
+                        )
+                        fk_sql = sql.SQL(
+                            """
+                            ALTER TABLE {data_schema}.{data_table}
+                            ADD CONSTRAINT {fk_name}
+                            FOREIGN KEY ({dim_column})
+                            REFERENCES {meta_schema}.{codelist_table} (code)
+                            ON DELETE RESTRICT ON UPDATE CASCADE
+                        """
+                        ).format(
+                            data_schema=sql.Identifier(schema),
+                            data_table=sql.Identifier(table_name),
+                            fk_name=sql.Identifier(fk_name),
+                            dim_column=sql.Identifier(dim.id),
+                            meta_schema=sql.Identifier(meta_schema),
+                            codelist_table=sql.Identifier(codelist_table),
+                        )
+                        cur.execute(fk_sql)
 
         self.conn.commit()
         logger.info(f"Table '{schema}.{table_name}' is ready.")

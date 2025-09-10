@@ -92,7 +92,13 @@ class TestSQLiteLoader:
 
         try:
             # 1. Prepare Schema
-            loader.prepare_schema(sample_dsd, table_name, data_schema)
+            loader.prepare_schema(
+                sample_dsd,
+                table_name,
+                data_schema,
+                representation="Standard",
+                meta_schema=meta_schema,
+            )
             conn = loader.conn
             res = conn.execute(
                 f"SELECT name FROM sqlite_master WHERE type='table' AND name='{data_table_fqn}'"

@@ -67,7 +67,13 @@ def test_schema_evolution_and_data_loading(db_settings: DatabaseSettings):
     loader = SQLiteLoader(db_settings)
 
     # 2. Initial Load
-    loader.prepare_schema(initial_dsd, table_name, schema)
+    loader.prepare_schema(
+        initial_dsd,
+        table_name,
+        schema,
+        representation="Standard",
+        meta_schema="test_meta",
+    )
 
     def stream_gen_v1():
         yield Observation(
@@ -92,7 +98,9 @@ def test_schema_evolution_and_data_loading(db_settings: DatabaseSettings):
     # 4. Evolved Load
     # Re-initialize loader with the evolved DSD for subsequent loading steps
     loader.dsd = evolved_dsd
-    loader.prepare_schema(evolved_dsd, table_name, schema)
+    loader.prepare_schema(
+        evolved_dsd, table_name, schema, representation="Standard", meta_schema="test_meta"
+    )
 
     def stream_gen_v2():
         yield Observation(
