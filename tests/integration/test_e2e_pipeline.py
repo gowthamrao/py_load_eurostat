@@ -135,13 +135,18 @@ def test_full_pipeline_e2e_with_mocked_parser(
     )
 
 
-    # Override settings to use the test server and DB
-    pipeline.settings.eurostat.base_url = httpserver.url_for("/")
-    pipeline.settings.db = db_settings
-
     # -- 2. Execute: Run the main pipeline function --
+    # Create a new settings object for this specific test run
+    from py_load_eurostat.config import AppSettings
+    test_settings = AppSettings()
+    test_settings.eurostat.base_url = httpserver.url_for("/")
+    test_settings.db = db_settings
+
     pipeline.run_pipeline(
-        dataset_id=dataset_id, representation="Standard", load_strategy="Full"
+        dataset_id=dataset_id,
+        representation="Standard",
+        load_strategy="Full",
+        settings=test_settings,
     )
 
     # -- 3. Assert: Verify the database state --

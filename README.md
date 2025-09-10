@@ -45,6 +45,7 @@ The following variables are available:
 | `PY_LOAD_EUROSTAT_DB__PASSWORD`       | The password for the database connection.              | **Required**                |
 | `PY_LOAD_EUROSTAT_DB__NAME`           | The name of the database to connect to.                | `eurostat`                  |
 | `PY_LOAD_EUROSTAT_DB__USE_UNLOGGED_TABLES` | Use unlogged tables for staging in PostgreSQL.    | `true`                      |
+| `PY_LOAD_EUROSTAT_MANAGED_DATASETS_PATH` | Path to the YAML file listing datasets to manage.      | `managed_datasets.yml`      |
 | `PY_LOAD_EUROSTAT_CACHE__PATH`        | Filesystem path for caching downloads.                 | `~/.cache/py-load-eurostat` |
 | `PY_LOAD_EUROSTAT_CACHE__ENABLED`     | Set to `false` to disable caching.                     | `true`                      |
 | `PY_LOAD_EUROSTAT_LOG__LEVEL`         | The logging level (e.g., `INFO`, `DEBUG`).             | `INFO`                      |
@@ -73,6 +74,36 @@ py-load-eurostat run --dataset-id "nama_10_gdp"
 *   `-d`, `--dataset-id TEXT`: The Eurostat dataset identifier (e.g., `nama_10_gdp`). **[required]**
 *   `-r`, `--representation TEXT`: The data representation: `"Standard"` (coded) or `"Full"` (labeled). [default: Standard]
 *   `-s`, `--load-strategy TEXT`: The load strategy: `"Full"` (replaces entire dataset) or `"Delta"` (loads if source is newer). [default: Full]
+
+### Batch Processing (Update All)
+
+For managing multiple datasets efficiently, you can use the `update-all` command. This command will check for updates for a list of datasets you define and only run the ingestion pipeline for those that are new or have been updated.
+
+```bash
+py-load-eurostat update-all
+```
+
+This command requires a configuration file that lists the datasets to manage.
+
+1.  **Create a `managed_datasets.yml` file:**
+    Copy the provided `managed_datasets.yml.example` to `managed_datasets.yml` and edit it to include the dataset IDs you want to track.
+
+    ```yaml
+    # managed_datasets.yml
+    datasets:
+      - nama_10_gdp
+      - tps00001
+      - env_air_gge
+    ```
+
+2.  **Run the command:**
+    With your `.env` file configured and `managed_datasets.yml` in place, simply run the command. The application will automatically find the files.
+
+    ```bash
+    py-load-eurostat update-all
+    ```
+
+The command will log which datasets are skipped, which are updated, and which fail, providing a clear summary at the end.
 
 ## Architecture Overview
 

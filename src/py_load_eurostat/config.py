@@ -94,6 +94,10 @@ class AppSettings(BaseSettings):
         default=DatabaseType.POSTGRES,
         description="The type of database to connect to.",
     )
+    managed_datasets_path: Path = Field(
+        default="managed_datasets.yml",
+        description="Path to the YAML file listing datasets to manage.",
+    )
     db: DatabaseSettings = Field(default_factory=DatabaseSettings)
     cache: CacheSettings = Field(default_factory=CacheSettings)
     log: LoggingSettings = Field(default_factory=LoggingSettings)
