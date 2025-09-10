@@ -23,6 +23,8 @@ class LoaderInterface(ABC):
         dsd: DSD,
         table_name: str,
         schema: str,
+        representation: str,
+        meta_schema: str,
         last_ingestion: Optional[IngestionHistory] = None,
     ) -> None:
         """
@@ -36,7 +38,9 @@ class LoaderInterface(ABC):
         Args:
             dsd: The Data Structure Definition of the dataset.
             table_name: The name of the target table for the dataset.
-            schema: The database schema to create tables in.
+            schema: The database schema to create data tables in.
+            representation: The data representation ('Standard' or 'Full').
+            meta_schema: The database schema for metadata (codelist) tables.
             last_ingestion: The last successful ingestion record for this dataset.
         """
         pass

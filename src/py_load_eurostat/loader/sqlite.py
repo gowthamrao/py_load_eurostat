@@ -8,7 +8,10 @@ SQL and is not as performant as the PostgreSQL loader for very large datasets.
 
 import logging
 import sqlite3
+from itertools import islice
 from typing import Dict, Generator, Optional, Tuple
+
+import pandas as pd
 
 from ..config import DatabaseSettings
 from ..models import DSD, Codelist, IngestionHistory, IngestionStatus, Observation
@@ -120,10 +123,12 @@ class SQLiteLoader(LoaderInterface):
         dsd: DSD,
         table_name: str,
         schema: str,
+        representation: str,
+        meta_schema: str,
         last_ingestion: Optional[IngestionHistory] = None,
     ) -> None:
-        # last_ingestion is ignored for the simple SQLite loader.
-        # It's only here to match the interface.
+        # last_ingestion, representation, and meta_schema are ignored for the
+        # simple SQLite loader. They are only here to match the interface.
         self.dsd = dsd
         table_fqn = self._fqn(schema, table_name)
         logger.info(f"Preparing table '{table_fqn}'")
@@ -223,23 +228,26 @@ class SQLiteLoader(LoaderInterface):
 
         main_table_fqn = self._fqn(schema, table_name)
         staging_table = f"staging_{main_table_fqn}"
+        chunk_size = 10000
+        total_rows_loaded = 0
 
         cur = self.conn.cursor()
         try:
-            cur.execute("BEGIN")
-            # Re-create the staging table each time
+            # Setup the staging table. With isolation_level=None, these are autocommitted.
             cur.execute(f"DROP TABLE IF EXISTS {staging_table}")
             res = cur.execute(
-                f"SELECT sql FROM sqlite_master WHERE name='{main_table_fqn}'"
+                f"SELECT sql FROM sqlite_master WHERE name=?", (main_table_fqn,)
             )
-            create_sql = res.fetchone()
-            if not create_sql:
+            create_sql_tuple = res.fetchone()
+            if not create_sql_tuple:
                 raise RuntimeError(
                     f"Could not find DDL for main table '{main_table_fqn}'"
                 )
 
-            cur.execute(create_sql[0].replace(main_table_fqn, staging_table))
+            create_sql = create_sql_tuple[0].replace(main_table_fqn, staging_table, 1)
+            cur.execute(create_sql)
 
+            # Get column names and order based on the DSD
             dim_order = [
                 d.id for d in sorted(self.dsd.dimensions, key=lambda x: x.position)
             ]
@@ -247,35 +255,47 @@ class SQLiteLoader(LoaderInterface):
                 (attr.id for attr in self.dsd.attributes if "FLAG" in attr.id.upper()),
                 "obs_flags",
             )
-
-            def data_generator(
-                stream: Generator[Observation, None, None],
-            ) -> Generator[tuple, None, None]:
-                for obs in stream:
-                    row_data = [obs.dimensions.get(dim_id) for dim_id in dim_order]
-                    row_data.extend([obs.time_period, obs.value, obs.flags])
-                    yield tuple(row_data)
-
             col_names = dim_order + [
                 "time_period",
                 self.dsd.primary_measure_id,
                 obs_flag_col_name,
             ]
-            placeholders = ", ".join(["?"] * len(col_names))
-            quoted_col_names = ", ".join(f'"{c}"' for c in col_names)
-            sql = f"INSERT INTO {staging_table} ({quoted_col_names}) VALUES ({placeholders})"
 
-            cursor = cur.executemany(sql, data_generator(data_stream))
-            row_count = cursor.rowcount
-            cur.execute("COMMIT")
-        except Exception:
-            cur.execute("ROLLBACK")
-            raise
+            # Process the stream in chunks to avoid loading everything into memory
+            while True:
+                chunk = list(islice(data_stream, chunk_size))
+                if not chunk:
+                    break  # End of the stream
+
+                chunk_row_count = len(chunk)
+                total_rows_loaded += chunk_row_count
+                logger.info(f"Processing a chunk of {chunk_row_count} rows...")
+
+                def data_generator(
+                    stream: list[Observation],
+                ) -> Generator[tuple, None, None]:
+                    """Converts a list of Observation objects into tuples."""
+                    for obs in stream:
+                        row_data = [obs.dimensions.get(dim_id) for dim_id in dim_order]
+                        row_data.extend([obs.time_period, obs.value, obs.flags])
+                        yield tuple(row_data)
+
+                df = pd.DataFrame(data_generator(chunk), columns=col_names)
+
+                # Append the chunk to the staging table. pandas handles the transaction.
+                df.to_sql(
+                    staging_table,
+                    self.conn,
+                    if_exists="append",
+                    index=False,
+                )
         finally:
             cur.close()
 
-        logger.info(f"Finished loading (executemany). Loaded {row_count} rows.")
-        return staging_table, row_count
+        logger.info(
+            f"Finished loading (pandas.to_sql in chunks). Loaded {total_rows_loaded} rows."
+        )
+        return staging_table, total_rows_loaded
 
     def finalize_load(
         self, staging_table: str, target_table: str, schema: str, strategy: str

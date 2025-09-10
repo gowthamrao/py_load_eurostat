@@ -130,7 +130,13 @@ def test_postgres_loader_end_to_end(
 
     try:
         # 1. Prepare schema
-        loader.prepare_schema(dsd=sample_dsd, table_name=table_name, schema=schema)
+        loader.prepare_schema(
+            dsd=sample_dsd,
+            table_name=table_name,
+            schema=schema,
+            representation="Full",  # FKs not tested here, so Full is fine
+            meta_schema="test_meta",
+        )
 
         # --- Schema Verification Logic ---
         with loader.conn.cursor(row_factory=dict_row) as cur:
@@ -200,6 +206,92 @@ def test_postgres_loader_end_to_end(
             loader.close_connection()
 
 
+@pytest.mark.integration
+def test_foreign_key_constraint(db_settings: DatabaseSettings, sample_dsd: DSD):
+    """
+    Tests that foreign key constraints are created for 'Standard' representation
+    and that they are enforced by the database.
+    """
+    import psycopg
+
+    loader = PostgresLoader(db_settings)
+    data_schema = "test_fk_data"
+    meta_schema = "test_fk_meta"
+    table_name = "sample_data_with_fk"
+
+    # Codelist that matches the 'geo' dimension in sample_dsd
+    codelists = {
+        "CL_GEO": Codelist(
+            id="CL_GEO",
+            version="1.0",
+            codes={"DE": Code(id="DE", name="Germany")},
+        ),
+        "CL_INDIC": Codelist(
+            id="CL_INDIC",
+            version="1.0",
+            codes={"IND1": Code(id="IND1", name="Indicator 1")},
+        ),
+    }
+
+    def bad_data_stream():
+        """Generator for data with an invalid 'geo' code."""
+        yield Observation(
+            dimensions={"geo": "XX", "indic_de": "IND1", "COUNT_OBS": "99"},
+            time_period="2025",
+            value=999.9,
+            flags="z",
+        )
+
+    try:
+        # 1. Create codelist tables first
+        loader.manage_codelists(codelists, meta_schema)
+
+        # 2. Prepare schema with 'Standard' representation to trigger FK creation
+        loader.prepare_schema(
+            dsd=sample_dsd,
+            table_name=table_name,
+            schema=data_schema,
+            representation="Standard",
+            meta_schema=meta_schema,
+        )
+
+        # 3. Verify the foreign key constraint exists
+        with loader.conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT conname FROM pg_constraint
+                WHERE conrelid = %s::regclass
+                AND contype = 'f'
+                """,
+                (f"{data_schema}.{table_name}",),
+            )
+            constraints = [row["conname"] for row in cur.fetchall()]
+            assert f"fk_{table_name}_geo" in constraints
+
+        # 4. Attempt to load data with an invalid foreign key
+        staging_table, _ = loader.bulk_load_staging(
+            table_name, data_schema, bad_data_stream()
+        )
+
+        # 5. Assert that finalizing the load raises a ForeignKeyViolation
+        with pytest.raises(psycopg.errors.ForeignKeyViolation) as excinfo:
+            loader.finalize_load(
+                staging_table, table_name, data_schema, strategy="merge"
+            )
+
+        assert f'violates foreign key constraint "fk_{table_name}_geo"' in str(
+            excinfo.value
+        )
+
+    finally:
+        # Clean up
+        if loader.conn and not loader.conn.closed:
+            with loader.conn.cursor() as cur:
+                cur.execute(f"DROP SCHEMA IF EXISTS {data_schema} CASCADE;")
+                cur.execute(f"DROP SCHEMA IF EXISTS {meta_schema} CASCADE;")
+            loader.close_connection()
+
+
 @pytest.fixture
 def tps00001_dsd() -> DSD:
     """A simplified DSD for the tps00001 dataset."""
@@ -261,7 +353,13 @@ def test_delta_load_with_merge_strategy(
 
     try:
         # --- 1. Initial Full Load (using SWAP) ---
-        loader.prepare_schema(dsd=tps00001_dsd, table_name=table_name, schema=schema)
+        loader.prepare_schema(
+            dsd=tps00001_dsd,
+            table_name=table_name,
+            schema=schema,
+            representation="Standard",
+            meta_schema="test_meta",
+        )
         staging_table_1, rows_1 = loader.bulk_load_staging(
             table_name, schema, tps00001_initial_stream()
         )
@@ -420,7 +518,13 @@ def test_schema_evolution_raises_on_type_mismatch_in_code(
 
     try:
         # 2. Initial schema preparation with DSD v1
-        loader.prepare_schema(dsd=dsd_v1, table_name=table_name, schema=schema)
+        loader.prepare_schema(
+            dsd=dsd_v1,
+            table_name=table_name,
+            schema=schema,
+            representation="Standard",
+            meta_schema="test_meta",
+        )
 
         # 3. Simulate a previous successful ingestion record for DSD v1
         last_ingestion = IngestionHistory(
@@ -453,6 +557,8 @@ def test_schema_evolution_raises_on_type_mismatch_in_code(
                 dsd=dsd_v2,
                 table_name=table_name,
                 schema=schema,
+                representation="Standard",
+                meta_schema="test_meta",
                 last_ingestion=last_ingestion,
             )
 
