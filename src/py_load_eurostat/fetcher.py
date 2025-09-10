@@ -110,13 +110,15 @@ class Fetcher:
         Args:
             dataset_id: The code of the dataset, used for creating a stable
                         cache filename.
-            download_url: The full, direct URL to the .tsv.gz file from the
+            download_url: The full or relative URL to the .tsv.gz file from the
                           inventory.
         """
         # The cache filename is derived from the dataset_id, not the URL's filename,
         # to ensure consistency.
         cache_filename = f"{dataset_id.lower()}.tsv.gz"
-        return self._fetch(download_url, cache_filename)
+        # Ensure the download URL is absolute
+        full_url = urljoin(str(self.settings.eurostat.base_url), download_url)
+        return self._fetch(full_url, cache_filename)
 
     def get_dsd_xml(self, dataset_id: str) -> Path:
         """
