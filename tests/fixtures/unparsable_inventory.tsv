@@ -1,0 +1,2 @@
+"this file is" not valid tsv
+it has "unmatched quotes and will cause a" ParserError hopefully

@@ -110,6 +110,8 @@ def test_sdmx_parser_codelist(mocker):
 
 from datetime import datetime, timezone
 
+import pandas as pd
+
 from py_load_eurostat.parser import InventoryParser
 
 
@@ -146,3 +148,89 @@ def test_inventory_parser(sample_inventory_path: Path):
 
     # Test getting a timestamp for a non-existent dataset
     assert parser.get_last_update_timestamp("non_existent_dataset") is None
+
+
+def test_inventory_parser_file_not_found():
+    """Tests that InventoryParser raises FileNotFoundError for a missing file."""
+    with pytest.raises(FileNotFoundError):
+        InventoryParser(Path("non_existent_file.tsv"))
+
+
+def test_inventory_parser_unparsable_file(tmp_path: Path):
+    """
+    Tests that InventoryParser raises an exception for a malformed file.
+    """
+    unparsable_file = tmp_path / "unparsable.tsv"
+    unparsable_file.write_text('"a" "b" "c"\n"d" "e')  # Malformed CSV
+    with pytest.raises(Exception):
+        InventoryParser(unparsable_file)
+
+
+from py_load_eurostat.parser import TsvParser
+
+
+def test_tsv_parser_bad_header():
+    """Tests that TsvParser raises ValueError for a malformed header."""
+    bad_header_path = FIXTURES_DIR / "bad_header.tsv.gz"
+    parser = TsvParser(bad_header_path)
+    with pytest.raises(ValueError, match="Invalid TSV header format"):
+        parser.parse()
+
+
+def test_tsv_parser_missing_dims():
+    """
+    Tests that TsvParser handles rows with missing dimension values gracefully.
+    """
+    missing_dims_path = FIXTURES_DIR / "missing_dims.tsv.gz"
+    parser = TsvParser(missing_dims_path)
+    chunk_iterator, _, _ = parser.parse()
+    # Consume the iterator to trigger the parsing logic
+    chunks = list(chunk_iterator)
+    # The main assertion is that this runs without error.
+    # We can also check the output.
+    assert len(chunks) == 1
+    df = chunks[0]
+    # The second row's dimension 'freq' should be None (or NaN)
+    assert pd.isna(df.iloc[1]["freq"])
+
+
+# --- SdmxParser Error Tests ---
+
+
+def test_sdmx_parser_empty_file_dsd():
+    """Tests that parsing an empty file for a DSD raises a ValueError."""
+    parser = SdmxParser()
+    empty_path = FIXTURES_DIR / "empty.xml"
+    with pytest.raises(ValueError, match="Failed to parse SDMX file"):
+        parser.parse_dsd_from_dataflow(empty_path)
+
+
+def test_sdmx_parser_empty_file_codelist():
+    """Tests that parsing an empty file for a Codelist raises a ValueError."""
+    parser = SdmxParser()
+    empty_path = FIXTURES_DIR / "empty.xml"
+    with pytest.raises(ValueError, match="Failed to parse SDMX file"):
+        parser.parse_codelist(empty_path)
+
+
+def test_sdmx_parser_wrong_type_dsd():
+    """
+    Tests that parsing a Codelist file as a DSD raises a TypeError.
+    """
+    parser = SdmxParser()
+    # Pass a codelist file where a DSD is expected
+    codelist_path = FIXTURES_DIR / "codelist_geo.xml"
+    with pytest.raises(TypeError, match="Could not find a valid"):
+        parser.parse_dsd_from_dataflow(codelist_path)
+
+
+def test_sdmx_parser_wrong_type_codelist():
+    """
+    Tests that parsing a DSD file as a Codelist raises a ValueError because
+    the underlying pysdmx library will fail to parse it correctly.
+    """
+    parser = SdmxParser()
+    # Pass a DSD file where a Codelist is expected
+    dsd_path = FIXTURES_DIR / "dsd_tps00001.xml"
+    with pytest.raises(ValueError, match="Failed to parse SDMX file"):
+        parser.parse_codelist(dsd_path)
