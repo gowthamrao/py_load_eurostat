@@ -83,7 +83,6 @@ def test_pipeline_full_representation(
     tps00001_dsd: DSD,
     sample_geo_codelist: Codelist,
 ):
-    mocker.patch.object(pipeline.settings, "db", db_settings)
     loader = PostgresLoader(db_settings)
     with loader.conn.cursor() as cur:
         cur.execute("DROP SCHEMA IF EXISTS eurostat_data CASCADE;")
@@ -103,7 +102,17 @@ def test_pipeline_full_representation(
     mocker.patch("py_load_eurostat.fetcher.Fetcher.get_dataset_tsv", return_value=FIXTURES_DIR / "tps00001.tsv.gz")
 
     dataset_id = "tps00001"
-    pipeline.run_pipeline(dataset_id=dataset_id, representation="Full", load_strategy="Full")
+
+    from py_load_eurostat.config import AppSettings
+    test_settings = AppSettings()
+    test_settings.db = db_settings
+
+    pipeline.run_pipeline(
+        dataset_id=dataset_id,
+        representation="Full",
+        load_strategy="Full",
+        settings=test_settings,
+    )
 
     loader = PostgresLoader(db_settings)
     data_schema = "eurostat_data"
@@ -129,7 +138,6 @@ def test_pipeline_full_representation(
 def test_pipeline_delta_load_skips_up_to_date_dataset(
     db_settings, mocker, caplog, tps00001_dsd: DSD, sample_geo_codelist: Codelist
 ):
-    mocker.patch.object(pipeline.settings, "db", db_settings)
     loader = PostgresLoader(db_settings)
     with loader.conn.cursor() as cur:
         cur.execute("DROP SCHEMA IF EXISTS eurostat_data CASCADE;")
@@ -167,7 +175,10 @@ def test_pipeline_delta_load_skips_up_to_date_dataset(
 
     try:
         with caplog.at_level("INFO"):
-            pipeline.run_pipeline(dataset_id, "Standard", "Delta")
+            from py_load_eurostat.config import AppSettings
+            test_settings = AppSettings()
+            test_settings.db = db_settings
+            pipeline.run_pipeline(dataset_id, "Standard", "Delta", settings=test_settings)
         assert f"Local data for '{dataset_id}' is up-to-date. Skipping." in caplog.text
     finally:
         loader = PostgresLoader(db_settings)

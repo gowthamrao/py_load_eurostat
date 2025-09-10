@@ -31,6 +31,7 @@ dependencies = [
     "structlog", # For structured logging
     "typer[all]", # For the command-line interface
     "python-dotenv>=1.0.0", # For .env file support
+    "pyyaml", # For parsing the managed datasets config file
 ]
 
 [project.scripts]

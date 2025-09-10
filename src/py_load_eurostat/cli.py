@@ -16,59 +16,51 @@ app = typer.Typer(
     add_completion=False,
 )
 
+from .config import AppSettings
+from .pipeline import run_batch_update, run_pipeline
+
+
 @app.command()
 def run(
-    dataset_id: Annotated[
-        str,
-        typer.Option(
-            ...,
-            "--dataset-id",
-            "-d",
-            help="The Eurostat dataset identifier (e.g., 'nama_10_gdp').",
+    dataset_id: str = typer.Option(
+        ...,
+        "--dataset-id",
+        "-d",
+        help="The Eurostat dataset identifier (e.g., 'nama_10_gdp').",
+    ),
+    representation: str = typer.Option(
+        "Standard",
+        "--representation",
+        "-r",
+        help="The data representation: 'Standard' (coded) or 'Full' (labeled).",
+    ),
+    load_strategy: str = typer.Option(
+        "Full",
+        "--load-strategy",
+        "-s",
+        help=(
+            "The load strategy: 'Full' (replaces entire dataset) or 'Delta' "
+            "(loads if source is newer)."
         ),
-    ],
-    representation: Annotated[
-        str,
-        typer.Option(
-            "Standard",
-            "--representation",
-            "-r",
-            help="The data representation: 'Standard' (coded) or 'Full' (labeled).",
+    ),
+    use_unlogged_tables: bool = typer.Option(
+        True,
+        "--use-unlogged-tables/--no-use-unlogged-tables",
+        help=(
+            "Enable/disable using UNLOGGED tables for staging in PostgreSQL. "
+            "Overrides env var."
         ),
-    ],
-    load_strategy: Annotated[
-        str,
-        typer.Option(
-            "Full",
-            "--load-strategy",
-            "-s",
-            help=(
-                "The load strategy: 'Full' (replaces entire dataset) or 'Delta' "
-                "(loads if source is newer)."
-            ),
-        ),
-    ],
-    use_unlogged_tables: Annotated[
-        bool,
-        typer.Option(
-            True,
-            "--use-unlogged-tables/--no-use-unlogged-tables",
-            help=(
-                "Enable/disable using UNLOGGED tables for staging in PostgreSQL. "
-                "Overrides env var."
-            ),
-        ),
-    ],
+    ),
 ) -> None:
     """
     Run the full ingestion pipeline for a single Eurostat dataset.
     """
-    # Import settings here to allow CLI to override them
-    from .config import settings
-
     # Basic logging setup for the CLI
     log_format = "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
     logging.basicConfig(level=logging.INFO, format=log_format)
+
+    # Instantiate settings here to ensure env vars are loaded correctly
+    settings = AppSettings()
 
     # The CLI option takes precedence over the environment variable.
     # We directly override the setting that the pipeline will use.
@@ -82,9 +74,7 @@ def run(
 
     # Here we will call the main pipeline orchestrator
     try:
-        from .pipeline import run_pipeline
-
-        run_pipeline(dataset_id, representation, load_strategy)
+        run_pipeline(dataset_id, representation, load_strategy, settings=settings)
         typer.secho(
             f"Pipeline for {dataset_id} completed successfully.", fg=typer.colors.GREEN
         )
@@ -93,6 +83,46 @@ def run(
         # This is a final catch-all for the CLI.
         logging.error(f"A critical error occurred: {e}", exc_info=True)
         typer.secho(f"Pipeline for {dataset_id} failed.", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def update_all() -> None:
+    """
+    Run the ingestion pipeline for all managed datasets.
+
+    This command reads the list of datasets from the file specified by the
+    `managed_datasets_path` setting (or PY_LOAD_EUROSTAT_MANAGED_DATASETS_PATH
+    environment variable). It then checks each dataset for updates and runs
+    the pipeline only for those that are new or have been updated.
+    """
+    # Basic logging setup for the CLI
+    log_format = "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+    logging.basicConfig(level=logging.INFO, format=log_format)
+
+    # Instantiate settings here
+    settings = AppSettings()
+
+    typer.echo(
+        "Starting batch update for all managed datasets from file: "
+        f"'{settings.managed_datasets_path}'"
+    )
+    try:
+        run_batch_update(settings.managed_datasets_path, settings=settings)
+        typer.secho("Batch update process completed.", fg=typer.colors.GREEN)
+    except FileNotFoundError:
+        typer.secho(
+            f"Error: Managed datasets file not found at '{settings.managed_datasets_path}'.",
+            fg=typer.colors.RED,
+        )
+        typer.echo(
+            "Please create this file or set the "
+            "PY_LOAD_EUROSTAT_MANAGED_DATASETS_PATH environment variable."
+        )
+        raise typer.Exit(code=1)
+    except Exception as e:
+        logging.error(f"A critical error occurred during batch update: {e}", exc_info=True)
+        typer.secho("Batch update process failed.", fg=typer.colors.RED)
         raise typer.Exit(code=1)
 
 

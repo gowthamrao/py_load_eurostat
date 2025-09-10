@@ -59,9 +59,6 @@ def test_full_pipeline_with_sqlite_via_factory(
     monkeypatch.setenv("PY_LOAD_EUROSTAT_DB_TYPE", "sqlite")
     monkeypatch.setenv("PY_LOAD_EUROSTAT_DB__NAME", str(db_file))
 
-    new_settings = AppSettings()
-    monkeypatch.setattr(pipeline, "settings", new_settings)
-
     # 2. Mock Fetcher and Parser
     dataset_id = "tps00001"
     mocker.patch.object(
@@ -84,8 +81,12 @@ def test_full_pipeline_with_sqlite_via_factory(
     )
 
     # 3. Run the pipeline
+    new_settings = AppSettings()
     pipeline.run_pipeline(
-        dataset_id=dataset_id, representation=representation, load_strategy="Full"
+        dataset_id=dataset_id,
+        representation=representation,
+        load_strategy="Full",
+        settings=new_settings,
     )
 
     # 4. Assert the results
