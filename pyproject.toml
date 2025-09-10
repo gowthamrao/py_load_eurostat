@@ -30,6 +30,7 @@ dependencies = [
     "tenacity", # For retry mechanisms
     "structlog", # For structured logging
     "typer[all]", # For the command-line interface
+    "python-dotenv>=1.0.0", # For .env file support
 ]
 
 [project.scripts]

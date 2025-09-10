@@ -28,18 +28,27 @@ This project was built based on the detailed Functional Requirements Document (F
 
 ## Configuration
 
-The application is configured entirely through environment variables. The following variables are required to connect to the target PostgreSQL database:
+The application is configured entirely through environment variables. For local development, you can create a `.env` file in the project root to store these variables. The application will automatically load it.
 
-| Environment Variable             | Description                                  | Default       |
-| -------------------------------- | -------------------------------------------- | ------------- |
-| `PY_LOAD_EUROSTAT_DB__HOST`       | The hostname of the database server.         | `localhost`   |
-| `PY_LOAD_EUROSTAT_DB__PORT`       | The port of the database server.             | `5432`        |
-| `PY_LOAD_EUROSTAT_DB__USER`       | The username for the database connection.    | `postgres`    |
-| `PY_LOAD_EUROSTAT_DB__PASSWORD`   | The password for the database connection.    | **Required**  |
-| `PY_LOAD_EUROSTAT_DB__NAME`       | The name of the database to connect to.      | `eurostat`    |
-| `PY_LOAD_EUROSTAT_CACHE__PATH`    | Filesystem path for caching downloads.       | `~/.cache/py-load-eurostat` |
-| `PY_LOAD_EUROSTAT_CACHE__ENABLED` | Set to `false` to disable caching.           | `true`        |
-| `PY_LOAD_EUROSTAT_LOG__LEVEL`     | The logging level (e.g., `INFO`, `DEBUG`).   | `INFO`        |
+See the `.env.example` file for a complete template.
+
+Environment variables will always take priority over values loaded from a `.env` file.
+
+The following variables are available:
+
+| Environment Variable                  | Description                                            | Default                     |
+| ------------------------------------- | ------------------------------------------------------ | --------------------------- |
+| `PY_LOAD_EUROSTAT_DB_TYPE`            | The database type (`postgres` or `sqlite`).            | `postgres`                  |
+| `PY_LOAD_EUROSTAT_DB__HOST`           | The hostname of the database server.                   | `localhost`                 |
+| `PY_LOAD_EUROSTAT_DB__PORT`           | The port of the database server.                       | `5432`                      |
+| `PY_LOAD_EUROSTAT_DB__USER`           | The username for the database connection.              | `postgres`                  |
+| `PY_LOAD_EUROSTAT_DB__PASSWORD`       | The password for the database connection.              | **Required**                |
+| `PY_LOAD_EUROSTAT_DB__NAME`           | The name of the database to connect to.                | `eurostat`                  |
+| `PY_LOAD_EUROSTAT_DB__USE_UNLOGGED_TABLES` | Use unlogged tables for staging in PostgreSQL.    | `true`                      |
+| `PY_LOAD_EUROSTAT_CACHE__PATH`        | Filesystem path for caching downloads.                 | `~/.cache/py-load-eurostat` |
+| `PY_LOAD_EUROSTAT_CACHE__ENABLED`     | Set to `false` to disable caching.                     | `true`                      |
+| `PY_LOAD_EUROSTAT_LOG__LEVEL`         | The logging level (e.g., `INFO`, `DEBUG`).             | `INFO`                      |
+| `PY_LOAD_EUROSTAT_EUROSTAT__BASE_URL` | The base URL for the Eurostat Dissemination API.       | `https://ec.europa.eu/eurostat/api/dissemination` |
 
 ## Usage
 

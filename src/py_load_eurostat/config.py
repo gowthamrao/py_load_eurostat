@@ -85,7 +85,10 @@ class AppSettings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_prefix="PY_LOAD_EUROSTAT_", env_nested_delimiter="__"
+        env_prefix="PY_LOAD_EUROSTAT_",
+        env_nested_delimiter="__",
+        env_file=".env",
+        env_file_encoding="utf-8",
     )
     db_type: DatabaseType = Field(
         default=DatabaseType.POSTGRES,
