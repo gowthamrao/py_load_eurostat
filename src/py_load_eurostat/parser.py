@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Dict, Generator, Iterator, List, Optional, Tuple
 
 import pandas as pd
+from pysdmx.errors import Invalid
 from pysdmx.io import read_sdmx
 from pysdmx.model.code import Codelist as PysdmxCodelist
 from pysdmx.model.dataflow import (
@@ -34,7 +35,12 @@ class SdmxParser:
     def parse_dsd_from_dataflow(self, sdmx_path: Path) -> DSD:
         """Parses a DSD from a dataflow SDMX file."""
         logger.info(f"Parsing DSD from {sdmx_path} using pysdmx")
-        message = read_sdmx(sdmx_path, validate=False)
+        try:
+            message = read_sdmx(sdmx_path, validate=False)
+        except (Invalid, KeyError) as e:
+            # Catching KeyError for pysdmx internal issues with wrong file types
+            logger.error(f"pysdmx failed to parse {sdmx_path}: {e}")
+            raise ValueError(f"Failed to parse SDMX file {sdmx_path}. It may be empty, malformed, or not a DSD.") from e
 
         if not message.structures:
             raise ValueError("No structures found in the SDMX message")
@@ -127,7 +133,12 @@ class SdmxParser:
 
     def parse_codelist(self, sdmx_path: Path) -> Codelist:
         logger.info(f"Parsing Codelist from {sdmx_path} using pysdmx")
-        message = read_sdmx(sdmx_path, validate=False)
+        try:
+            message = read_sdmx(sdmx_path, validate=False)
+        except (Invalid, KeyError) as e:
+            logger.error(f"pysdmx failed to parse {sdmx_path}: {e}")
+            raise ValueError(f"Failed to parse SDMX file {sdmx_path}. It may be empty, malformed, or not a codelist.") from e
+
         if not message.structures:
             raise ValueError("No structures found in the SDMX message")
 
@@ -162,7 +173,10 @@ class TsvParser:
         with gzip.open(self.tsv_path, "rt", encoding="utf-8") as f:
             header_line = f.readline().strip()
 
+        if "\t" not in header_line:
+            raise ValueError(f"Invalid TSV header format: {header_line}")
         dim_header_part, time_header_part = header_line.split("\t", 1)
+
         if "\\" not in dim_header_part:
             raise ValueError(f"Invalid TSV header format: {header_line}")
 
