@@ -18,16 +18,26 @@ class LoaderInterface(ABC):
     """
 
     @abstractmethod
-    def prepare_schema(self, dsd: DSD, table_name: str, schema: str) -> None:
+    def prepare_schema(
+        self,
+        dsd: DSD,
+        table_name: str,
+        schema: str,
+        last_ingestion: Optional[IngestionHistory] = None,
+    ) -> None:
         """
         Ensures the required database schema and tables exist.
         This includes the main data table, metadata tables, and the
         ingestion history table. This method must be idempotent.
 
+        If a `last_ingestion` record is provided, it may be used to compare
+        DSD versions and perform schema evolution.
+
         Args:
             dsd: The Data Structure Definition of the dataset.
             table_name: The name of the target table for the dataset.
             schema: The database schema to create tables in.
+            last_ingestion: The last successful ingestion record for this dataset.
         """
         pass
 

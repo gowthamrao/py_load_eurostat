@@ -115,7 +115,15 @@ class SQLiteLoader(LoaderInterface):
         cur.execute(f"PRAGMA table_info({table_fqn});")
         return {row[1] for row in cur.fetchall()}
 
-    def prepare_schema(self, dsd: DSD, table_name: str, schema: str) -> None:
+    def prepare_schema(
+        self,
+        dsd: DSD,
+        table_name: str,
+        schema: str,
+        last_ingestion: Optional[IngestionHistory] = None,
+    ) -> None:
+        # last_ingestion is ignored for the simple SQLite loader.
+        # It's only here to match the interface.
         self.dsd = dsd
         table_fqn = self._fqn(schema, table_name)
         logger.info(f"Preparing table '{table_fqn}'")
