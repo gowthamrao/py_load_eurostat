@@ -65,7 +65,7 @@ def test_full_pipeline_with_sqlite_via_factory(
     # 2. Mock Fetcher and Parser
     dataset_id = "tps00001"
     mocker.patch.object(
-        Fetcher, "get_toc", return_value=FIXTURES_DIR / "sample_toc.tsv"
+        Fetcher, "get_toc", return_value=FIXTURES_DIR / "sample_inventory.tsv"
     )
     # Mock the parser to return our correct DSD, bypassing the broken fixture file
     mocker.patch(

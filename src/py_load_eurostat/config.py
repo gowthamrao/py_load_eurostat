@@ -9,7 +9,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-from pydantic import Field
+from pydantic import Field, HttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -65,6 +65,20 @@ class LoggingSettings(BaseSettings):
     )
 
 
+class EurostatSettings(BaseSettings):
+    """
+    Defines settings related to the Eurostat source APIs.
+    """
+
+    base_url: HttpUrl = Field(
+        default="https://ec.europa.eu/eurostat/api/dissemination",
+        description="The base URL for the Eurostat Dissemination API.",
+    )
+    # The new API uses different endpoints for different types of metadata
+    sdmx_api_version: str = Field(default="2.1", description="The SDMX API version.")
+    sdmx_agency_id: str = Field(default="ESTAT", description="The SDMX agency ID.")
+
+
 class AppSettings(BaseSettings):
     """
     The main application settings model.
@@ -80,6 +94,7 @@ class AppSettings(BaseSettings):
     db: DatabaseSettings = Field(default_factory=DatabaseSettings)
     cache: CacheSettings = Field(default_factory=CacheSettings)
     log: LoggingSettings = Field(default_factory=LoggingSettings)
+    eurostat: EurostatSettings = Field(default_factory=EurostatSettings)
 
 
 settings = AppSettings()

@@ -2,13 +2,14 @@
 Fetcher module for downloading data and metadata from Eurostat APIs.
 
 This module provides a Fetcher class that handles:
-- Making HTTP requests to the Eurostat SDMX API.
+- Making HTTP requests to the Eurostat APIs.
 - Caching downloaded files to the filesystem to avoid redundant requests.
 - Resiliently retrying failed requests with exponential backoff.
 """
 
 import logging
 from pathlib import Path
+from urllib.parse import urljoin
 
 import httpx
 from tenacity import before_sleep_log, retry, stop_after_attempt, wait_exponential
@@ -17,9 +18,6 @@ from .config import AppSettings
 
 # Configure a logger for this module
 logger = logging.getLogger(__name__)
-
-# Base URL for the Eurostat API
-EUROSTAT_API_BASE_URL = "https://ec.europa.eu/eurostat/api/dissemination"
 
 
 class Fetcher:
@@ -97,22 +95,26 @@ class Fetcher:
 
     def get_toc(self) -> Path:
         """
-        Fetches the master Table of Contents (TOC) for all bulk data.
-        The response is a tab-separated values (TSV) file.
+        Fetches the master Table of Contents (TOC), now called the inventory,
+        for all bulk data. The response is a tab-separated values (TSV) file.
         """
-        url = f"{EUROSTAT_API_BASE_URL}/catalogue/toc/txt?lang=en"
-        return self._fetch(url, "toc.tsv")
+        # This URL is from the new API documentation for getting the data inventory.
+        url = f"{self.settings.eurostat.base_url}/files/inventory?type=data"
+        return self._fetch(url, "inventory.tsv")
 
     def get_dataset_tsv(self, dataset_id: str, download_url: str) -> Path:
         """
         Fetches a dataset in the compressed TSV format using a direct
-        bulk download URL.
+        download URL from the inventory.
 
         Args:
-            dataset_id: The code of the dataset, used for caching.
-            download_url: The full, direct URL to the .tsv.gz file.
+            dataset_id: The code of the dataset, used for creating a stable
+                        cache filename.
+            download_url: The full, direct URL to the .tsv.gz file from the
+                          inventory.
         """
-        # The cache filename is derived from the dataset_id, not the URL's filename
+        # The cache filename is derived from the dataset_id, not the URL's filename,
+        # to ensure consistency.
         cache_filename = f"{dataset_id.lower()}.tsv.gz"
         return self._fetch(download_url, cache_filename)
 
@@ -120,15 +122,23 @@ class Fetcher:
         """
         Fetches the Data Structure Definition (DSD) for a given dataset.
         """
+        # Constructing the URL based on the new SDMX API guidelines
+        sdmx_base = urljoin(str(self.settings.eurostat.base_url), "sdmx/")
         url = (
-            f"{EUROSTAT_API_BASE_URL}/sdmx/2.1/dataflow/ESTAT/{dataset_id}"
+            f"{sdmx_base}{self.settings.eurostat.sdmx_api_version}/"
+            f"dataflow/{self.settings.eurostat.sdmx_agency_id}/{dataset_id.upper()}"
             "/latest?references=datastructure"
         )
-        return self._fetch(url, f"dsd_{dataset_id}.xml")
+        return self._fetch(url, f"dsd_{dataset_id.lower()}.xml")
 
     def get_codelist_xml(self, codelist_id: str) -> Path:
         """
         Fetches a specific Codelist in SDMX-ML format.
         """
-        url = f"{EUROSTAT_API_BASE_URL}/sdmx/2.1/codelist/ESTAT/{codelist_id}/latest"
-        return self._fetch(url, f"codelist_{codelist_id}.xml")
+        sdmx_base = urljoin(str(self.settings.eurostat.base_url), "sdmx/")
+        url = (
+            f"{sdmx_base}{self.settings.eurostat.sdmx_api_version}/"
+            f"codelist/{self.settings.eurostat.sdmx_agency_id}/{codelist_id.upper()}"
+            "/latest"
+        )
+        return self._fetch(url, f"codelist_{codelist_id.lower()}.xml")

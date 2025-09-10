@@ -39,43 +39,29 @@ class SdmxParser:
         if not message.structures:
             raise ValueError("No structures found in the SDMX message")
 
-        # A structure message can contain a DSD directly or a Dataflow that
-        # refers to a DSD. The parser must handle both cases.
-
-        # 1. Try to find a DSD directly in the message structures.
         dsd_node = next(
             (s for s in message.structures if isinstance(s, PysdmxDSD)), None
         )
 
-        # 2. If no direct DSD, try to find it via a Dataflow reference.
         if not dsd_node:
             if hasattr(message, "dataflow") and message.dataflow:
-                # Take the first dataflow found
                 dataflow = list(message.dataflow.values())[0]
                 dsd_node = dataflow.structure
             else:
-                # Fallback for messages that might just contain structures
-                # but not a dataflow attribute. This is a bit of a guess.
                 pass
 
         if not isinstance(dsd_node, PysdmxDSD):
             raise TypeError(
-                "Could not find a valid DataStructureDefinition in the SDMX message, "
-                "either directly or referenced from a Dataflow."
+                "Could not find a valid DataStructureDefinition in the SDMX message."
             )
 
+        dim_to_cl_map = self._extract_codelist_map_from_xml(sdmx_path)
         dimensions: list[Dimension] = []
         attributes: list[Attribute] = []
         measures: list[Measure] = []
-        primary_measure_id = "obs_value"  # Default
-
-        # Hotfix: pysdmx does not seem to reliably expose the codelist reference
-        # on the component object when parsing from a file. We will parse the
-        # XML manually to extract this mapping as a fallback.
-        dim_to_cl_map = self._extract_codelist_map_from_xml(sdmx_path)
+        primary_measure_id = "obs_value"
 
         for i, component in enumerate(dsd_node.components):
-            # Extract data type, default to String if not present
             data_type = str(component.dtype) if component.dtype else "String"
 
             if component.role == Role.DIMENSION:
@@ -120,10 +106,6 @@ class SdmxParser:
         )
 
     def _extract_codelist_map_from_xml(self, sdmx_path: Path) -> Dict[str, str]:
-        """
-        Parses an SDMX-ML DSD file to extract the mapping between dimension IDs
-        and their associated codelist IDs.
-        """
         import xml.etree.ElementTree as ET
 
         tree = ET.parse(sdmx_path)
@@ -132,23 +114,18 @@ class SdmxParser:
             "s": "http://www.sdmx.org/resources/sdmxml/schemas/v2_1/structure",
             "c": "http://www.sdmx.org/resources/sdmxml/schemas/v2_1/common",
         }
-
         mapping = {}
-        # Find all Dimension elements within the DataStructure
         for dim in root.findall(".//s:Dimension", ns):
             dim_id = dim.get("id")
-            # Find the Codelist reference within the dimension
             codelist_ref = dim.find(".//s:Enumeration/c:Ref", ns)
             if dim_id and codelist_ref is not None:
                 codelist_id = codelist_ref.get("id")
                 if codelist_id:
                     mapping[dim_id.lower()] = codelist_id
-
         logger.debug(f"Extracted dimension-codelist map: {mapping}")
         return mapping
 
     def parse_codelist(self, sdmx_path: Path) -> Codelist:
-        """Parses a Codelist from an SDMX file."""
         logger.info(f"Parsing Codelist from {sdmx_path} using pysdmx")
         message = read_sdmx(sdmx_path, validate=False)
         if not message.structures:
@@ -178,45 +155,21 @@ CHUNK_SIZE = 100_000
 
 
 class TsvParser:
-    """
-    Parses a Eurostat gzipped TSV file in a memory-efficient, streaming manner.
-    """
-
     def __init__(self, tsv_path: Path):
         self.tsv_path = tsv_path
 
-    def parse(
-        self,
-    ) -> Tuple[Iterator[pd.DataFrame], List[str], List[str]]:
-        """
-        Parses the TSV file, yielding chunks of data as pandas DataFrames.
-
-        This method reads the header to determine the column structure and then
-        streams the rest of the file in chunks to keep memory usage low.
-
-        Returns:
-            A tuple containing:
-            - An iterator yielding wide-format DataFrames (chunks).
-            - A list of the dimension column names.
-            - A list of the time period column names.
-        """
-        # 1. Read header line to get dimension and time period columns
+    def parse(self) -> Tuple[Iterator[pd.DataFrame], List[str], List[str]]:
         with gzip.open(self.tsv_path, "rt", encoding="utf-8") as f:
             header_line = f.readline().strip()
 
-        # The first part of the header contains dimensions, separated by ',',
-        # with a '\time' suffix. e.g., "sex,age,geo\time"
         dim_header_part, time_header_part = header_line.split("\t", 1)
         if "\\" not in dim_header_part:
             raise ValueError(f"Invalid TSV header format: {header_line}")
 
-        # Remove the '\time' suffix to isolate the dimension names
         dims_only_str = dim_header_part.split("\\")[0]
         dimension_cols = [d.strip() for d in dims_only_str.split(",")]
-
         time_period_cols = [p.strip() for p in time_header_part.split("\t")]
 
-        # 2. Create a streaming reader (iterator) for the data
         df_iterator = pd.read_csv(
             self.tsv_path,
             compression="gzip",
@@ -226,39 +179,24 @@ class TsvParser:
             chunksize=CHUNK_SIZE,
         )
 
-        # 3. Define a generator to process each chunk
-        def chunk_processor(
-            iterator: Iterator[pd.DataFrame],
-        ) -> Generator[pd.DataFrame, None, None]:
+        def chunk_processor(iterator: Iterator[pd.DataFrame]) -> Generator[pd.DataFrame, None, None]:
             logger.info(f"Begin streaming chunks from {self.tsv_path}")
             for i, chunk in enumerate(iterator):
-                # Rename the first column which contains all dimensions
-                chunk.rename(
-                    columns={chunk.columns[0]: "dimensions_combined"}, inplace=True
-                )
-                # Use a robust method to split the combined dimension column,
-                # as values themselves can contain commas if they are quoted.
-                # A simple string split is not sufficient.
+                chunk.rename(columns={chunk.columns[0]: "dimensions_combined"}, inplace=True)
+
                 def parse_eurostat_dims(dim_string: str) -> list[str]:
                     import csv
                     from io import StringIO
-
                     if not isinstance(dim_string, str):
                         return [None] * len(dimension_cols)
-                    # The csv module correctly handles quoted fields.
                     return next(csv.reader(StringIO(dim_string)))
 
                 parsed_dims = chunk["dimensions_combined"].apply(parse_eurostat_dims)
-
-                # Create a new DataFrame from the parsed dimensions.
-                # This ensures the correct number of columns.
                 dims_df = pd.DataFrame(
                     parsed_dims.tolist(),
                     index=chunk.index,
                     columns=dimension_cols,
                 )
-
-                # Combine the new dimension columns with the time period data
                 processed_chunk = pd.concat([dims_df, chunk[time_period_cols]], axis=1)
                 logger.debug(f"Processed chunk {i} with {len(processed_chunk)} rows.")
                 yield processed_chunk
@@ -267,83 +205,57 @@ class TsvParser:
         return chunk_processor(df_iterator), dimension_cols, time_period_cols
 
 
-class TocParser:
+class InventoryParser:
     """
-    Parses the Eurostat Table of Contents (TOC) file.
-
-    The TOC provides metadata about all available bulk download files, including
-    dataset codes, titles, update times, and download URLs.
+    Parses the Eurostat data inventory file.
     """
 
-    def __init__(self, toc_path: Path):
-        self.toc_path = toc_path
-        self._toc_data: Dict[str, Dict] = {}
-        self._load_toc()
+    def __init__(self, inventory_path: Path):
+        self.inventory_path = inventory_path
+        self._inventory_data: Dict[str, Dict] = {}
+        self._load_inventory()
 
-    def _load_toc(self) -> None:
-        """
-        Loads the tab-separated TOC file into a dictionary for easy lookup.
-        The dictionary maps dataset codes to their metadata.
-        """
-        logger.info(f"Loading and parsing Table of Contents file: {self.toc_path}")
+    def _load_inventory(self) -> None:
+        logger.info(f"Loading and parsing inventory file: {self.inventory_path}")
         try:
-            with open(self.toc_path, "r", encoding="utf-8-sig") as f:
-                # Skip header line
-                next(f, None)
-                for line in f:
-                    # Strip quotes and whitespace from each part
-                    parts = [p.strip().strip('"') for p in line.strip().split("\t")]
-                    # The 'type' column (index 2) tells us if it's a downloadable dataset
-                    if len(parts) < 7 or parts[2] not in ("table", "dataset"):
-                        continue
+            # Use pandas for robust TSV parsing
+            df = pd.read_csv(self.inventory_path, sep="\t", header=0)
 
-                    code = parts[1]
-                    # We only care about datasets, which have a 'code'
-                    if not code:
-                        continue
+            # Rename columns for easier access
+            df.columns = [col.strip() for col in df.columns]
+            df = df.rename(columns={
+                "Code": "code",
+                "Last data change": "last_update",
+                "Data download url (tsv)": "download_url"
+            })
 
-                    # The download URL is the last column
-                    url_part = parts[-1]
-                    if not url_part.endswith(".tsv.gz"):
-                        continue
+            # Filter for datasets and required columns
+            df = df[df["Type"] == "DATASET"][["code", "last_update", "download_url"]]
+            df = df.dropna(subset=["code", "last_update", "download_url"])
 
-                    self._toc_data[code.lower()] = {
-                        "url": f"https://ec.europa.eu/eurostat/api/dissemination{url_part}",
-                        "last_update": pd.to_datetime(parts[3], utc=True),
-                    }
+            # Convert last_update to timezone-aware datetime objects
+            df["last_update"] = pd.to_datetime(df["last_update"], utc=True)
+
+            # Set the dataset code as the index for fast lookups
+            df = df.set_index(df["code"].str.lower())
+
+            self._inventory_data = df.to_dict("index")
             logger.info(
-                f"Successfully parsed {len(self._toc_data)} dataset entries from TOC."
+                f"Successfully parsed {len(self._inventory_data)} dataset entries from inventory."
             )
         except FileNotFoundError:
-            logger.error(f"TOC file not found at {self.toc_path}")
+            logger.error(f"Inventory file not found at {self.inventory_path}")
             raise
         except Exception as e:
             logger.error(
-                f"Failed to parse TOC file {self.toc_path}: {e}", exc_info=True
+                f"Failed to parse inventory file {self.inventory_path}: {e}", exc_info=True
             )
+            raise
 
     def get_last_update_timestamp(self, dataset_id: str) -> Optional[datetime]:
-        """
-        Gets the last update timestamp for a specific dataset from the TOC.
-
-        Args:
-            dataset_id: The code of the dataset (e.g., 'nama_10_gdp').
-
-        Returns:
-            A timezone-aware datetime object or None if the dataset is not found.
-        """
-        dataset_info = self._toc_data.get(dataset_id.lower())
+        dataset_info = self._inventory_data.get(dataset_id.lower())
         return dataset_info["last_update"] if dataset_info else None
 
     def get_download_url(self, dataset_id: str) -> Optional[str]:
-        """
-        Gets the full download URL for a specific dataset from the TOC.
-
-        Args:
-            dataset_id: The code of the dataset (e.g., 'nama_10_gdp').
-
-        Returns:
-            The full download URL string or None if not found.
-        """
-        dataset_info = self._toc_data.get(dataset_id.lower())
-        return dataset_info["url"] if dataset_info else None
+        dataset_info = self._inventory_data.get(dataset_id.lower())
+        return dataset_info["download_url"] if dataset_info else None
