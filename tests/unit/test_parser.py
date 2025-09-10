@@ -110,42 +110,38 @@ def test_sdmx_parser_codelist(mocker):
 
 from datetime import datetime, timezone
 
-from py_load_eurostat.parser import TocParser
+from py_load_eurostat.parser import InventoryParser
 
 
 @pytest.fixture
-def sample_toc_path(tmp_path: Path) -> Path:
-    """Creates a sample TOC file for testing."""
-    # This content mimics the real TOC file format
+def sample_inventory_path(tmp_path: Path) -> Path:
+    """Creates a sample inventory file for testing."""
+    # This content mimics the new inventory file format
     content = (
-        "title\tcode\ttype\tlastUpdate\tlastModified\tvalues\tdownloadLink\n"
-        "some metadata line that should be ignored\n"
-        "data\ttps00001\ttable\t2024-07-26T23:00:00Z\t2024-07-27T04:15:33.123Z\t2\t/data/tps00001.tsv.gz\n"
-        "data\tanother_dataset\ttable\t2024-07-25T23:00:00Z\t2024-07-26T04:15:33.123Z\t2\t/data/another_dataset.tsv.gz\n"
+        "Code\tType\tSource dataset\tLast data change\tLast structural change\tData download url (tsv)\n"
+        "tps00001\tDATASET\t-\t2024-07-26T23:00:00+0200\t2024-03-13T23:00:00+0100\thttps://example.com/data/tps00001.tsv.gz\n"
+        "another_dataset\tDATASET\t-\t2024-07-25T23:00:00+0200\t2024-03-13T23:00:00+0100\thttps://example.com/data/another_dataset.tsv.gz\n"
     )
-    toc_file = tmp_path / "sample_toc.tsv"
-    toc_file.write_text(content, encoding="utf-8")
-    return toc_file
+    inventory_file = tmp_path / "sample_inventory.tsv"
+    inventory_file.write_text(content, encoding="utf-8")
+    return inventory_file
 
 
-def test_toc_parser(sample_toc_path: Path):
-    """Tests that the TocParser correctly parses the TOC file."""
-    parser = TocParser(sample_toc_path)
+def test_inventory_parser(sample_inventory_path: Path):
+    """Tests that the InventoryParser correctly parses the inventory file."""
+    parser = InventoryParser(sample_inventory_path)
 
     # Test getting a valid download URL
-    expected_url = (
-        "https://ec.europa.eu/eurostat/api/dissemination/data/tps00001.tsv.gz"
-    )
+    expected_url = "https://example.com/data/tps00001.tsv.gz"
     assert parser.get_download_url("tps00001") == expected_url
-    assert (
-        parser.get_download_url("TPS00001") == expected_url
-    )  # Test case-insensitivity
+    assert parser.get_download_url("TPS00001") == expected_url  # Test case-insensitivity
 
     # Test getting a non-existent dataset
     assert parser.get_download_url("non_existent_dataset") is None
 
     # Test getting a valid timestamp
-    expected_ts = datetime(2024, 7, 26, 23, 0, 0, tzinfo=timezone.utc)
+    # The sample data is '2024-07-26T23:00:00+0200', which is 21:00 UTC.
+    expected_ts = datetime(2024, 7, 26, 21, 0, 0, tzinfo=timezone.utc)
     assert parser.get_last_update_timestamp("tps00001") == expected_ts
 
     # Test getting a timestamp for a non-existent dataset

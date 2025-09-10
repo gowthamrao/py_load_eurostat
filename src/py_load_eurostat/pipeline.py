@@ -13,7 +13,7 @@ from .config import settings
 from .fetcher import Fetcher
 from .loader.factory import get_loader
 from .models import IngestionHistory, IngestionStatus
-from .parser import SdmxParser, TocParser, TsvParser
+from .parser import InventoryParser, SdmxParser, TsvParser
 from .transformer import Transformer
 
 logger = logging.getLogger(__name__)
@@ -41,12 +41,12 @@ def run_pipeline(dataset_id: str, representation: str, load_strategy: str) -> No
         loader = get_loader(settings)
         logger.info(f"Using '{settings.db_type.value}' database loader.")
 
-        # 2. Fetch TOC and check for updates
-        logger.info("Fetching Table of Contents...")
-        toc_path = fetcher.get_toc()
-        toc_parser = TocParser(toc_path)
-        remote_last_update = toc_parser.get_last_update_timestamp(dataset_id)
-        download_url = toc_parser.get_download_url(dataset_id)
+        # 2. Fetch inventory and check for updates
+        logger.info("Fetching Eurostat data inventory...")
+        inventory_path = fetcher.get_toc()
+        inventory_parser = InventoryParser(inventory_path)
+        remote_last_update = inventory_parser.get_last_update_timestamp(dataset_id)
+        download_url = inventory_parser.get_download_url(dataset_id)
 
         history_record = IngestionHistory(
             dataset_id=dataset_id,
@@ -58,7 +58,7 @@ def run_pipeline(dataset_id: str, representation: str, load_strategy: str) -> No
 
         if not remote_last_update or not download_url:
             raise RuntimeError(
-                f"Could not find dataset '{dataset_id}' in Eurostat's Table of Contents."
+                f"Could not find dataset '{dataset_id}' in Eurostat's inventory."
             )
 
         # Update history record with info we just fetched
@@ -99,6 +99,8 @@ def run_pipeline(dataset_id: str, representation: str, load_strategy: str) -> No
 
         # 5. Fetch and Parse main data file
         logger.info(f"Fetching dataset TSV from {download_url}...")
+        # The new inventory provides the full URL, so we pass it directly.
+        # The dataset_id is also passed to be used for the cache filename.
         tsv_path = fetcher.get_dataset_tsv(dataset_id, download_url)
         tsv_parser = TsvParser(tsv_path)
         wide_df_iterator, dim_cols, time_cols = tsv_parser.parse()
