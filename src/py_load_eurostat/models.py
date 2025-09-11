@@ -7,11 +7,11 @@ observational data. These models are used as Data Transfer Objects (DTOs)
 between the different layers of the pipeline.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # === SDMX Metadata Models ===
 
@@ -154,8 +154,7 @@ class IngestionHistory(BaseModel):
     Corresponds to the schema defined in FRD section 4.1.
     """
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     ingestion_id: Optional[int] = Field(
         default=None, description="Primary key for the ingestion record."
@@ -177,7 +176,7 @@ class IngestionHistory(BaseModel):
         description="The current status of the ingestion.",
     )
     start_time: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(UTC),
         description="The start time of the ingestion process.",
     )
     end_time: Optional[datetime] = Field(
