@@ -77,3 +77,69 @@ def test_get_required_columns_dynamic_types(mocker, mock_db_settings):
     }
 
     assert required_columns == expected_types
+
+
+def test_init_raises_error_if_no_password(mock_db_settings):
+    """Test that ValueError is raised if the password is not provided."""
+    import pytest
+    from py_load_eurostat.config import DatabaseSettings
+
+    mock_db_settings.password = None
+    with pytest.raises(ValueError, match="password is required"):
+        PostgresLoader(mock_db_settings)
+
+
+def test_connection_error_handling(mock_db_settings, mocker):
+    """Test that operational errors during connection are handled."""
+    import psycopg
+
+    mocker.patch("psycopg.connect", side_effect=psycopg.OperationalError("conn failed"))
+    with pytest.raises(psycopg.OperationalError):
+        PostgresLoader(mock_db_settings)
+
+
+def test_missing_primary_measure_warning(mock_db_settings, mocker):
+    """Test that a warning is logged if the primary measure is not in the DSD."""
+    mocker.patch("py_load_eurostat.loader.postgresql.PostgresLoader._create_connection")
+    mock_logger = mocker.patch("py_load_eurostat.loader.postgresql.logger.warning")
+    mock_dsd = DSD(
+        id="mock_dsd",
+        version="1.0",
+        dimensions=[],
+        attributes=[],
+        measures=[],
+        primary_measure_id="NON_EXISTENT",
+    )
+    loader = PostgresLoader(db_settings=mock_db_settings)
+    loader._get_required_columns(mock_dsd)
+    mock_logger.assert_called_once()
+    assert "Primary measure 'NON_EXISTENT' not found" in mock_logger.call_args[0][0]
+
+
+def test_prepare_schema_type_mismatch_error(mock_db_settings, mocker):
+    """Test that a data type mismatch raises NotImplementedError."""
+    mocker.patch("py_load_eurostat.loader.postgresql.PostgresLoader._create_connection")
+    loader = PostgresLoader(db_settings=mock_db_settings)
+    mock_dsd = DSD(
+        id="mock_dsd",
+        version="1.0",
+        dimensions=[Dimension(id="geo", position=1, data_type="String")],
+        attributes=[],
+        measures=[],
+    )
+    # Simulate an existing table with a mismatched column type
+    mocker.patch.object(loader, "_table_exists", return_value=True)
+    mocker.patch.object(
+        loader, "_get_existing_column_types", return_value={"geo": "INTEGER"}
+    )
+    with pytest.raises(NotImplementedError, match="Data type mismatch"):
+        loader.prepare_schema(mock_dsd, "test", "public", "", "meta")
+
+
+def test_finalize_merge_no_dsd_error(mock_db_settings, mocker):
+    """Test that _finalize_merge raises an error if DSD is not set."""
+    mocker.patch("py_load_eurostat.loader.postgresql.PostgresLoader._create_connection")
+    loader = PostgresLoader(db_settings=mock_db_settings)
+    loader.dsd = None  # Ensure DSD is not set
+    with pytest.raises(RuntimeError, match="DSD must be set"):
+        loader._finalize_merge("staging", "target", "public")
