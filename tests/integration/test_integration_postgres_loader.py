@@ -26,12 +26,16 @@ from py_load_eurostat.models import (
 )
 
 
+from testcontainers.core.wait_strategies import LogMessageWaitStrategy
+
 @pytest.fixture(scope="module")
 def postgres_container():
     """
     Spins up a PostgreSQL container for the test module.
     """
-    with PostgresContainer("postgres:16-alpine") as postgres:
+    postgres = PostgresContainer("postgres:16-alpine")
+    postgres.waiting_for(LogMessageWaitStrategy("database system is ready to accept connections"))
+    with postgres:
         yield postgres
 
 
