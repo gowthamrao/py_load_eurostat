@@ -1,0 +1,3 @@
+Code	Type	Source dataset	Last data change	Last structural change	Data download url (tsv)
+tps00001	DATASET	-	2024-07-26T23:00:00+0200	2024-03-13T23:00:00+0100	/data/tps00001.tsv.gz
+another_dataset	DATASET	-	2024-07-25T23:00:00+0200	2024-03-13T23:00:00+0100	/data/another_dataset.tsv.gz
