@@ -2,7 +2,6 @@ import pytest
 from typer.testing import CliRunner
 
 from py_load_eurostat.cli import app
-from py_load_eurostat.config import AppSettings
 
 
 # Fixture for the CLI runner

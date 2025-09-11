@@ -1,17 +1,12 @@
 # Integration tests for high-level pipeline features.
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Generator
-from unittest.mock import MagicMock
 
-import pandas as pd
 import pytest
 from psycopg import sql
 from psycopg.rows import dict_row
-from typer.testing import CliRunner
 
 from py_load_eurostat import pipeline
-from py_load_eurostat.cli import app
 from py_load_eurostat.config import DatabaseSettings
 from py_load_eurostat.loader.postgresql import PostgresLoader
 from py_load_eurostat.models import (
@@ -23,7 +18,6 @@ from py_load_eurostat.models import (
     IngestionHistory,
     Measure,
 )
-from py_load_eurostat.transformer import Transformer
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
@@ -36,7 +30,9 @@ def sample_geo_codelist() -> Codelist:
         codes={
             "DE": Code(id="DE", name="Germany"),
             "FR": Code(id="FR", name="France"),
-            "EU27_2020": Code(id="EU27_2020", name="European Union - 27 countries (from 2020)"),
+            "EU27_2020": Code(
+                id="EU27_2020", name="European Union - 27 countries (from 2020)"
+            ),
         },
     )
 
@@ -94,16 +90,32 @@ def test_pipeline_full_representation(
             return sample_geo_codelist
         return Codelist(id=codelist_id, version="1.0", codes={})
 
-    mocker.patch("py_load_eurostat.parser.SdmxParser.parse_dsd_from_dataflow", return_value=tps00001_dsd)
-    mocker.patch("py_load_eurostat.parser.SdmxParser.parse_codelist", side_effect=codelist_side_effect)
-    mocker.patch("py_load_eurostat.fetcher.Fetcher.get_toc", return_value=FIXTURES_DIR / "sample_inventory.tsv")
+    mocker.patch(
+        "py_load_eurostat.parser.SdmxParser.parse_dsd_from_dataflow",
+        return_value=tps00001_dsd,
+    )
+    mocker.patch(
+        "py_load_eurostat.parser.SdmxParser.parse_codelist",
+        side_effect=codelist_side_effect,
+    )
+    mocker.patch(
+        "py_load_eurostat.fetcher.Fetcher.get_toc",
+        return_value=FIXTURES_DIR / "sample_inventory.tsv",
+    )
     mocker.patch("py_load_eurostat.fetcher.Fetcher.get_dsd_xml")
-    mocker.patch("py_load_eurostat.fetcher.Fetcher.get_codelist_xml", side_effect=lambda codelist_id: codelist_id)
-    mocker.patch("py_load_eurostat.fetcher.Fetcher.get_dataset_tsv", return_value=FIXTURES_DIR / "tps00001.tsv.gz")
+    mocker.patch(
+        "py_load_eurostat.fetcher.Fetcher.get_codelist_xml",
+        side_effect=lambda codelist_id: codelist_id,
+    )
+    mocker.patch(
+        "py_load_eurostat.fetcher.Fetcher.get_dataset_tsv",
+        return_value=FIXTURES_DIR / "tps00001.tsv.gz",
+    )
 
     dataset_id = "tps00001"
 
     from py_load_eurostat.config import AppSettings
+
     test_settings = AppSettings()
     test_settings.db = db_settings
 
@@ -119,9 +131,13 @@ def test_pipeline_full_representation(
     table_name = f"data_{dataset_id}"
     try:
         with loader.conn.cursor(row_factory=dict_row) as cur:
-            cur.execute("SELECT to_regclass(%s) as oid;", (f"{data_schema}.{table_name}",))
+            cur.execute(
+                "SELECT to_regclass(%s) as oid;", (f"{data_schema}.{table_name}",)
+            )
             assert cur.fetchone()["oid"] is not None
-            query = sql.SQL("SELECT geo FROM {schema}.{table} WHERE geo = 'Germany' LIMIT 1").format(
+            query = sql.SQL(
+                "SELECT geo FROM {schema}.{table} WHERE geo = 'Germany' LIMIT 1"
+            ).format(
                 schema=sql.Identifier(data_schema), table=sql.Identifier(table_name)
             )
             cur.execute(query)
@@ -149,16 +165,34 @@ def test_pipeline_delta_load_skips_up_to_date_dataset(
             return sample_geo_codelist
         return Codelist(id=codelist_id, version="1.0", codes={})
 
-    mocker.patch("py_load_eurostat.parser.SdmxParser.parse_dsd_from_dataflow", return_value=tps00001_dsd)
-    mocker.patch("py_load_eurostat.parser.SdmxParser.parse_codelist", side_effect=codelist_side_effect)
+    mocker.patch(
+        "py_load_eurostat.parser.SdmxParser.parse_dsd_from_dataflow",
+        return_value=tps00001_dsd,
+    )
+    mocker.patch(
+        "py_load_eurostat.parser.SdmxParser.parse_codelist",
+        side_effect=codelist_side_effect,
+    )
 
     dataset_id = "tps00001"
     current_timestamp = datetime(2023, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-    mocker.patch("py_load_eurostat.parser.InventoryParser.get_last_update_timestamp", return_value=current_timestamp)
-    mocker.patch("py_load_eurostat.fetcher.Fetcher.get_toc", return_value=FIXTURES_DIR / "sample_inventory.tsv")
+    mocker.patch(
+        "py_load_eurostat.parser.InventoryParser.get_last_update_timestamp",
+        return_value=current_timestamp,
+    )
+    mocker.patch(
+        "py_load_eurostat.fetcher.Fetcher.get_toc",
+        return_value=FIXTURES_DIR / "sample_inventory.tsv",
+    )
     mocker.patch("py_load_eurostat.fetcher.Fetcher.get_dsd_xml")
-    mocker.patch("py_load_eurostat.fetcher.Fetcher.get_codelist_xml", side_effect=lambda codelist_id: codelist_id)
-    mocker.patch("py_load_eurostat.fetcher.Fetcher.get_dataset_tsv", return_value=FIXTURES_DIR / "tps00001.tsv.gz")
+    mocker.patch(
+        "py_load_eurostat.fetcher.Fetcher.get_codelist_xml",
+        side_effect=lambda codelist_id: codelist_id,
+    )
+    mocker.patch(
+        "py_load_eurostat.fetcher.Fetcher.get_dataset_tsv",
+        return_value=FIXTURES_DIR / "tps00001.tsv.gz",
+    )
 
     loader = PostgresLoader(db_settings)
     initial_record = IngestionHistory(
@@ -176,9 +210,12 @@ def test_pipeline_delta_load_skips_up_to_date_dataset(
     try:
         with caplog.at_level("INFO"):
             from py_load_eurostat.config import AppSettings
+
             test_settings = AppSettings()
             test_settings.db = db_settings
-            pipeline.run_pipeline(dataset_id, "Standard", "Delta", settings=test_settings)
+            pipeline.run_pipeline(
+                dataset_id, "Standard", "Delta", settings=test_settings
+            )
         assert f"Local data for '{dataset_id}' is up-to-date. Skipping." in caplog.text
     finally:
         loader = PostgresLoader(db_settings)

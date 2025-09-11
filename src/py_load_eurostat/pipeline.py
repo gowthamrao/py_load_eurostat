@@ -10,14 +10,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+import yaml
+
 from .config import AppSettings
 from .fetcher import Fetcher
 from .loader.factory import get_loader
 from .models import IngestionHistory, IngestionStatus
 from .parser import InventoryParser, SdmxParser, TsvParser
 from .transformer import Transformer
-
-import yaml
 
 logger = logging.getLogger(__name__)
 

@@ -163,7 +163,8 @@ class SQLiteLoader(LoaderInterface):
                         logger.info(
                             f"Adding missing column '{col_name}' to '{table_fqn}'."
                         )
-                        alter_sql = f'ALTER TABLE {table_fqn} ADD COLUMN "{col_name}" {col_type}'
+                        alter_sql = f'ALTER TABLE {table_fqn} ADD COLUMN "{col_name}" '
+                        alter_sql += f"{col_type}"
                         cur.execute(alter_sql)
                     logger.info("Finished adding missing columns.")
                 else:
@@ -203,7 +204,11 @@ class SQLiteLoader(LoaderInterface):
                     for item in codelist_obj.codes.values()
                 ]
                 cur.executemany(
-                    f"INSERT OR REPLACE INTO {cl_table_fqn} (code, label_en, description_en, parent_code) VALUES (?, ?, ?, ?)",
+                    (
+                        f"INSERT OR REPLACE INTO {cl_table_fqn} "
+                        "(code, label_en, description_en, parent_code) "
+                        "VALUES (?, ?, ?, ?)"
+                    ),
                     rows,
                 )
                 logger.info(f"Successfully loaded {len(rows)} codes for '{cl_id}'.")
@@ -233,10 +238,11 @@ class SQLiteLoader(LoaderInterface):
 
         cur = self.conn.cursor()
         try:
-            # Setup the staging table. With isolation_level=None, these are autocommitted.
+            # Setup the staging table. With isolation_level=None, these are
+            # autocommitted.
             cur.execute(f"DROP TABLE IF EXISTS {staging_table}")
             res = cur.execute(
-                f"SELECT sql FROM sqlite_master WHERE name=?", (main_table_fqn,)
+                "SELECT sql FROM sqlite_master WHERE name=?", (main_table_fqn,)
             )
             create_sql_tuple = res.fetchone()
             if not create_sql_tuple:
@@ -293,7 +299,8 @@ class SQLiteLoader(LoaderInterface):
             cur.close()
 
         logger.info(
-            f"Finished loading (pandas.to_sql in chunks). Loaded {total_rows_loaded} rows."
+            "Finished loading (pandas.to_sql in chunks). "
+            f"Loaded {total_rows_loaded} rows."
         )
         return staging_table, total_rows_loaded
 
@@ -301,7 +308,9 @@ class SQLiteLoader(LoaderInterface):
         self, staging_table: str, target_table: str, schema: str, strategy: str
     ) -> None:
         if strategy.lower() != "swap":
-            raise ValueError(f"SQLiteLoader only supports 'swap' strategy, not '{strategy}'")
+            raise ValueError(
+                f"SQLiteLoader only supports 'swap' strategy, not '{strategy}'"
+            )
 
         target_fqn = self._fqn(schema, target_table)
         logger.info(
@@ -330,14 +339,19 @@ class SQLiteLoader(LoaderInterface):
         cursor = self.conn.cursor()
         try:
             cursor.execute(
-                f"SELECT 1 FROM sqlite_master WHERE type='table' AND name='{history_table_fqn}'"
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                (history_table_fqn,),
             )
             if not cursor.fetchone():
                 return None  # History table doesn't exist yet
 
             cursor.row_factory = sqlite3.Row  # type: ignore[assignment]
             cursor.execute(
-                f"SELECT * FROM {history_table_fqn} WHERE dataset_id = ? AND status = ? ORDER BY end_time DESC LIMIT 1",
+                (
+                    f"SELECT * FROM {history_table_fqn} "
+                    "WHERE dataset_id = ? AND status = ? "
+                    "ORDER BY end_time DESC LIMIT 1"
+                ),
                 (dataset_id, IngestionStatus.SUCCESS.value),
             )
             row = cursor.fetchone()
@@ -364,7 +378,10 @@ class SQLiteLoader(LoaderInterface):
             field_names = ", ".join(record_dict.keys())
             placeholders = ", ".join(["?"] * len(record_dict))
             cur.execute(
-                f"INSERT INTO {history_table_fqn} ({field_names}) VALUES ({placeholders})",
+                (
+                    f"INSERT INTO {history_table_fqn} ({field_names}) "
+                    f"VALUES ({placeholders})"
+                ),
                 list(record_dict.values()),
             )
             cur.execute("COMMIT")

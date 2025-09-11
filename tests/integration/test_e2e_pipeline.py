@@ -4,8 +4,8 @@ to simulate Eurostat's API and a real PostgreSQL database.
 """
 
 import logging
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 from psycopg.rows import class_row, dict_row
@@ -20,8 +20,8 @@ from py_load_eurostat.models import (
     Code,
     Codelist,
     Dimension,
-    Measure,
     IngestionHistory,
+    Measure,
 )
 
 # Set a logger for debugging the test
@@ -74,7 +74,9 @@ def sample_geo_codelist_fixture() -> Codelist:
         codes={
             "DE": Code(id="DE", name="Germany"),
             "FR": Code(id="FR", name="France"),
-            "EU27_2020": Code(id="EU27_2020", name="European Union - 27 countries (from 2020)"),
+            "EU27_2020": Code(
+                id="EU27_2020", name="European Union - 27 countries (from 2020)"
+            ),
         },
     )
 
@@ -134,10 +136,10 @@ def test_full_pipeline_e2e_with_mocked_parser(
         return_value=datetime.now(timezone.utc),
     )
 
-
     # -- 2. Execute: Run the main pipeline function --
     # Create a new settings object for this specific test run
     from py_load_eurostat.config import AppSettings
+
     test_settings = AppSettings()
     test_settings.eurostat.base_url = httpserver.url_for("/")
     test_settings.db = db_settings
@@ -159,7 +161,10 @@ def test_full_pipeline_e2e_with_mocked_parser(
             assert cur.fetchone()["row_count"] == 5
 
             # Check a specific data point
-            cur.execute("SELECT * FROM eurostat_data.data_tps00001 WHERE geo = 'DE' AND time_period = '2022'")
+            cur.execute(
+                "SELECT * FROM eurostat_data.data_tps00001 "
+                "WHERE geo = 'DE' AND time_period = '2022'"
+            )
             de_data = cur.fetchone()
             assert de_data is not None
             assert de_data["obs_value"] == 12.5

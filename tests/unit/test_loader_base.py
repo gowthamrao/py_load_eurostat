@@ -1,7 +1,7 @@
-import pytest
+from typing import Dict, Generator, Optional, Tuple
+
 from py_load_eurostat.loader.base import LoaderInterface
 from py_load_eurostat.models import DSD, Codelist, IngestionHistory, Observation
-from typing import Dict, Generator, Optional, Tuple
 
 
 class ConcreteLoader(LoaderInterface):

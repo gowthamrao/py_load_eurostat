@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from py_load_eurostat.models import DSD, Code, Codelist, Dimension
+from py_load_eurostat.parser import TsvParser
 from py_load_eurostat.transformer import Transformer
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
@@ -48,9 +49,6 @@ def test_transformer_parse_value(raw_input, expected_value, expected_flag, mock_
     value, flag = transformer._parse_value(raw_input)
     assert value == expected_value
     assert flag == expected_flag
-
-
-from py_load_eurostat.parser import TsvParser
 
 
 def test_transformer_transform(mock_dsd):
@@ -110,7 +108,11 @@ def test_transformer_transform(mock_dsd):
 
 
 def test_transformer_transform_full_representation(mock_dsd):
-    """Tests the transform method with 'Full' representation to ensure codes are replaced by labels."""
+    """
+    Tests the transform method with 'Full' representation.
+
+    This ensures that codes are replaced by labels.
+    """
     # 1. Setup: Create mock codelists
     geo_codelist = Codelist(
         id="CL_GEO",

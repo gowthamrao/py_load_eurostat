@@ -7,7 +7,9 @@ This module uses Typer to create a CLI for running the ingestion pipeline.
 import logging
 
 import typer
-from typing_extensions import Annotated
+
+from .config import AppSettings
+from .pipeline import run_batch_update, run_pipeline
 
 # Create a Typer application
 app = typer.Typer(
@@ -15,9 +17,6 @@ app = typer.Typer(
     help="A CLI tool to download, transform, and load Eurostat data into a database.",
     add_completion=False,
 )
-
-from .config import AppSettings
-from .pipeline import run_batch_update, run_pipeline
 
 
 @app.command()
@@ -112,7 +111,8 @@ def update_all() -> None:
         typer.secho("Batch update process completed.", fg=typer.colors.GREEN)
     except FileNotFoundError:
         typer.secho(
-            f"Error: Managed datasets file not found at '{settings.managed_datasets_path}'.",
+            "Error: Managed datasets file not found at "
+            f"'{settings.managed_datasets_path}'.",
             fg=typer.colors.RED,
         )
         typer.echo(
@@ -121,7 +121,9 @@ def update_all() -> None:
         )
         raise typer.Exit(code=1)
     except Exception as e:
-        logging.error(f"A critical error occurred during batch update: {e}", exc_info=True)
+        logging.error(
+            f"A critical error occurred during batch update: {e}", exc_info=True
+        )
         typer.secho("Batch update process failed.", fg=typer.colors.RED)
         raise typer.Exit(code=1)
 

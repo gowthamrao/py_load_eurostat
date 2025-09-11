@@ -6,7 +6,6 @@ This test validates the `update-all` command and the underlying
 processes datasets that require updates.
 """
 
-import textwrap
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -14,12 +13,11 @@ from unittest.mock import patch
 import pytest
 import yaml
 from testcontainers.postgres import PostgresContainer
-from typer.testing import CliRunner
 
-from py_load_eurostat.cli import app
-from py_load_eurostat.config import DatabaseSettings
+from py_load_eurostat.config import AppSettings, DatabaseSettings
 from py_load_eurostat.loader.postgresql import PostgresLoader
 from py_load_eurostat.models import IngestionHistory, IngestionStatus
+from py_load_eurostat.pipeline import run_batch_update
 
 # Pytest marker for all tests in this file
 pytestmark = pytest.mark.integration
@@ -50,9 +48,9 @@ def managed_datasets_file(tmp_path: Path) -> Path:
     datasets = {
         "datasets": [
             "DS_UP_TO_DATE",  # This one should be skipped
-            "DS_OUTDATED",    # This one should be updated
-            "DS_NEW",         # This one should be updated
-            "DS_NOT_IN_REMOTE", # This one should be skipped/fail
+            "DS_OUTDATED",  # This one should be updated
+            "DS_NEW",  # This one should be updated
+            "DS_NOT_IN_REMOTE",  # This one should be skipped/fail
         ]
     }
     file_path = tmp_path / "managed_datasets.yml"
@@ -67,15 +65,26 @@ def mock_inventory_file(tmp_path: Path) -> Path:
     Creates a mock inventory TSV file that mimics the real format from Eurostat.
     """
     now = datetime.now(timezone.utc)
-    inventory_content = textwrap.dedent(
-        f"""\
-        Code	Type	Source dataset	Last data change	Last structural change	Data download url (tsv)
-        DS_UP_TO_DATE	DATASET	-	{(now - timedelta(days=2)).isoformat()}	2024-01-01T00:00:00Z	/data/DS_UP_TO_DATE.tsv.gz
-        DS_OUTDATED	DATASET	-	{now.isoformat()}	2024-01-01T00:00:00Z	/data/DS_OUTDATED.tsv.gz
-        DS_NEW	DATASET	-	{now.isoformat()}	2024-01-01T00:00:00Z	/data/DS_NEW.tsv.gz
-        DS_TABLE	TABLE	-	{now.isoformat()}	2024-01-01T00:00:00Z	/data/DS_TABLE.tsv.gz
-        """
+    header = (
+        "Code\tType\tSource dataset\tLast data change\t"
+        "Last structural change\tData download url (tsv)"
     )
+    up_to_date_ts = (now - timedelta(days=2)).isoformat()
+    now_ts = now.isoformat()
+    lines = [
+        header,
+        (
+            f"DS_UP_TO_DATE\tDATASET\t-\t{up_to_date_ts}\t"
+            "2024-01-01T00:00:00Z\t/data/DS_UP_TO_DATE.tsv.gz"
+        ),
+        (
+            f"DS_OUTDATED\tDATASET\t-\t{now_ts}\t"
+            "2024-01-01T00:00:00Z\t/data/DS_OUTDATED.tsv.gz"
+        ),
+        (f"DS_NEW\tDATASET\t-\t{now_ts}\t2024-01-01T00:00:00Z\t/data/DS_NEW.tsv.gz"),
+        (f"DS_TABLE\tTABLE\t-\t{now_ts}\t2024-01-01T00:00:00Z\t/data/DS_TABLE.tsv.gz"),
+    ]
+    inventory_content = "\n".join(lines)
     file_path = tmp_path / "mock_inventory.tsv"
     file_path.write_text(inventory_content)
     return file_path
@@ -91,8 +100,9 @@ def setup_database_state(db_settings: DatabaseSettings):
     history_up_to_date = IngestionHistory(
         dataset_id="DS_UP_TO_DATE",
         status=IngestionStatus.SUCCESS,
-        source_last_update=now - timedelta(days=1), # Remote is 2 days old
-        start_time=now, end_time=now,
+        source_last_update=now - timedelta(days=1),  # Remote is 2 days old
+        start_time=now,
+        end_time=now,
         load_strategy="Delta",
         representation="Standard",
     )
@@ -101,8 +111,9 @@ def setup_database_state(db_settings: DatabaseSettings):
     history_outdated = IngestionHistory(
         dataset_id="DS_OUTDATED",
         status=IngestionStatus.SUCCESS,
-        source_last_update=now - timedelta(days=5), # Remote is now
-        start_time=now, end_time=now,
+        source_last_update=now - timedelta(days=5),  # Remote is now
+        start_time=now,
+        end_time=now,
         load_strategy="Delta",
         representation="Standard",
     )
@@ -112,10 +123,6 @@ def setup_database_state(db_settings: DatabaseSettings):
         loader.save_ingestion_state(history_outdated, schema)
     finally:
         loader.close_connection()
-
-
-from py_load_eurostat.config import AppSettings
-from py_load_eurostat.pipeline import run_batch_update
 
 
 @patch("py_load_eurostat.pipeline.run_pipeline")

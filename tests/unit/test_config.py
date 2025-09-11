@@ -1,6 +1,4 @@
-import os
 from pathlib import Path
-from unittest.mock import patch
 
 from py_load_eurostat.config import AppSettings, DatabaseType
 
