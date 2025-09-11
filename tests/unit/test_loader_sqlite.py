@@ -1,4 +1,6 @@
+import sqlite3
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -134,3 +136,115 @@ class TestSQLiteLoader:
 
         finally:
             loader.close_connection()
+
+    def test_create_connection_error(self, mocker):
+        """Test that a connection error is handled."""
+        mocker.patch("sqlite3.connect", side_effect=sqlite3.Error("Connection failed"))
+        with pytest.raises(sqlite3.Error):
+            SQLiteLoader(DatabaseSettings(name="dummy.db"))
+
+    def test_prepare_schema_exception_rolls_back(self, db_settings, sample_dsd, mocker):
+        """Test that an exception during schema preparation triggers a rollback."""
+        loader = SQLiteLoader(db_settings)
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        mock_cursor.execute.side_effect = [
+            # First call for "BEGIN"
+            None,
+            # Second call for "_table_exists"
+            None,
+            # Third call for "CREATE TABLE"
+            Exception("Boom"),
+            # Fourth call for "ROLLBACK"
+            None,
+        ]
+        loader.conn = mock_conn
+
+        with pytest.raises(Exception, match="Boom"):
+            loader.prepare_schema(sample_dsd, "my_data", "public", "", "")
+
+        mock_cursor.execute.assert_any_call("ROLLBACK")
+
+    def test_manage_codelists_empty(self, db_settings):
+        """Test that manage_codelists handles empty codelists gracefully."""
+        loader = SQLiteLoader(db_settings)
+        loader.manage_codelists({"EMPTY_CL": Codelist(id="EMPTY_CL", version="1.0", codes={})}, "meta")
+        # No assertion needed, just checking that it doesn't crash
+
+    def test_manage_codelists_error_rolls_back(self, db_settings, mocker):
+        """Test that an error during codelist management triggers a rollback."""
+        loader = SQLiteLoader(db_settings)
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.executemany.side_effect = sqlite3.Error("DB error")
+        loader.conn = mock_conn
+
+        codelist = Codelist(id="CL_TEST", version="1.0", codes={"a": Code(id="a", name="A")})
+        with pytest.raises(sqlite3.Error):
+            loader.manage_codelists({"CL_TEST": codelist}, "meta")
+
+        mock_cursor.execute.assert_any_call("ROLLBACK")
+
+    def test_bulk_load_staging_no_dsd(self, db_settings):
+        """Test that bulk_load_staging raises an error if DSD is not set."""
+        loader = SQLiteLoader(db_settings)
+        with pytest.raises(RuntimeError, match="DSD must be set"):
+            loader.bulk_load_staging("my_data", "public", iter([]))
+
+    def test_finalize_load_invalid_strategy(self, db_settings):
+        """Test that finalize_load raises an error for an invalid strategy."""
+        loader = SQLiteLoader(db_settings)
+        with pytest.raises(ValueError, match="only supports 'swap'"):
+            loader.finalize_load("staging", "target", "public", "merge")
+
+    def test_finalize_load_error_rolls_back(self, db_settings, mocker):
+        """Test that an error during finalization triggers a rollback."""
+        loader = SQLiteLoader(db_settings)
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        def execute_side_effect(sql):
+            if "DROP TABLE" in sql:
+                raise Exception("DB error")
+            return None
+
+        mock_cursor.execute.side_effect = execute_side_effect
+        loader.conn = mock_conn
+
+        with pytest.raises(Exception):
+            loader.finalize_load("staging", "target", "public", "swap")
+
+        mock_cursor.execute.assert_any_call("ROLLBACK")
+
+    def test_get_ingestion_state_no_history_table(self, db_settings):
+        """Test getting ingestion state when the history table does not exist."""
+        loader = SQLiteLoader(db_settings)
+        state = loader.get_ingestion_state("some_dataset", "public")
+        assert state is None
+
+    def test_save_ingestion_state_error_rolls_back(self, db_settings, mocker):
+        """Test that an error during saving ingestion state triggers a rollback."""
+        from py_load_eurostat.models import IngestionHistory
+        loader = SQLiteLoader(db_settings)
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        def execute_side_effect(sql, *args):
+            if "INSERT INTO" in sql:
+                raise Exception("DB error")
+            return None
+
+        mock_cursor.execute.side_effect = execute_side_effect
+        loader.conn = mock_conn
+
+        record = IngestionHistory(dataset_id="test", dsd_hash="hash", load_strategy="Full", representation="Standard")
+
+        with pytest.raises(Exception):
+            loader.save_ingestion_state(record, "public")
+
+        mock_cursor.execute.assert_any_call("ROLLBACK")

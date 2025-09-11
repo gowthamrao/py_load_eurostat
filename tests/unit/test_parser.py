@@ -234,3 +234,39 @@ def test_sdmx_parser_wrong_type_codelist():
     dsd_path = FIXTURES_DIR / "dsd_tps00001.xml"
     with pytest.raises(ValueError, match="Failed to parse SDMX file"):
         parser.parse_codelist(dsd_path)
+
+
+class TestSdmxParserErrorCases:
+    def test_parse_dsd_no_structures(self, tmp_path, mocker):
+        from unittest.mock import MagicMock
+        mock_message = MagicMock()
+        mock_message.structures = []
+        mocker.patch("py_load_eurostat.parser.read_sdmx", return_value=mock_message)
+        parser = SdmxParser()
+        file = tmp_path / "no_structs.xml"
+        file.touch()
+        with pytest.raises(ValueError, match="No structures found"):
+            parser.parse_dsd_from_dataflow(file)
+
+    def test_parse_dsd_no_dsd_node_no_dataflow(self, tmp_path, mocker):
+        from unittest.mock import MagicMock
+        mock_message = MagicMock()
+        mock_message.structures = [MagicMock()]  # Not a DSD
+        mock_message.dataflow = {}
+        mocker.patch("py_load_eurostat.parser.read_sdmx", return_value=mock_message)
+        parser = SdmxParser()
+        file = tmp_path / "no_dsd.xml"
+        file.touch()
+        with pytest.raises(TypeError, match="Could not find a valid"):
+            parser.parse_dsd_from_dataflow(file)
+
+    def test_parse_codelist_no_structures(self, tmp_path, mocker):
+        from unittest.mock import MagicMock
+        mock_message = MagicMock()
+        mock_message.structures = []
+        mocker.patch("py_load_eurostat.parser.read_sdmx", return_value=mock_message)
+        parser = SdmxParser()
+        file = tmp_path / "no_structs_cl.xml"
+        file.touch()
+        with pytest.raises(ValueError, match="No structures found"):
+            parser.parse_codelist(file)
