@@ -16,10 +16,11 @@ build/
 .idea/
 .vscode/
 
-# Caches
+# Caches and artifacts
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
 
 # OS-specific
 .DS_Store
