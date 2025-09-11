@@ -210,6 +210,71 @@ def test_postgres_loader_end_to_end(
 
 
 @pytest.mark.integration
+def test_prepare_schema_is_idempotent_with_fks(
+    db_settings: DatabaseSettings, sample_dsd: DSD
+):
+    """
+    Tests that calling prepare_schema multiple times with FKs is idempotent.
+    This specifically covers the "foreign key already exists" branch.
+    """
+    loader = PostgresLoader(db_settings)
+    data_schema = "test_idempotent_data"
+    meta_schema = "test_idempotent_meta"
+    table_name = "sample_data_idempotent"
+
+    codelists = {
+        "CL_GEO": Codelist(id="CL_GEO", version="1.0", codes={}),
+        "CL_INDIC": Codelist(id="CL_INDIC", version="1.0", codes={}),
+    }
+
+    try:
+        # 1. Create codelist tables so FKs can be created
+        loader.manage_codelists(codelists, meta_schema)
+
+        # 2. First call to prepare_schema, which creates the FKs
+        loader.prepare_schema(
+            dsd=sample_dsd,
+            table_name=table_name,
+            schema=data_schema,
+            representation="Standard",
+            meta_schema=meta_schema,
+        )
+
+        # 3. Second call to prepare_schema
+        # This should execute the code path where the FKs are found to exist
+        # and not raise any errors.
+        loader.prepare_schema(
+            dsd=sample_dsd,
+            table_name=table_name,
+            schema=data_schema,
+            representation="Standard",
+            meta_schema=meta_schema,
+        )
+
+        # 4. Verify that the table and FKs still exist
+        with loader.conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM information_schema.tables WHERE table_name = %s AND table_schema = %s",
+                (table_name, data_schema),
+            )
+            assert cur.fetchone() is not None, "Table should still exist"
+
+            cur.execute(
+                "SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = %s",
+                (f"fk_{table_name}_geo",),
+            )
+            assert cur.fetchone() is not None, "Foreign key should still exist"
+
+    finally:
+        # Clean up
+        if loader.conn and not loader.conn.closed:
+            with loader.conn.cursor() as cur:
+                cur.execute(f"DROP SCHEMA IF EXISTS {data_schema} CASCADE;")
+                cur.execute(f"DROP SCHEMA IF EXISTS {meta_schema} CASCADE;")
+            loader.close_connection()
+
+
+@pytest.mark.integration
 def test_foreign_key_constraint(db_settings: DatabaseSettings, sample_dsd: DSD):
     """
     Tests that foreign key constraints are created for 'Standard' representation
