@@ -2,15 +2,17 @@
 Unit tests for the parser module.
 """
 
+from datetime import datetime, timezone
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from pysdmx.model.code import Code as PysdmxCode
 from pysdmx.model.code import Codelist as PysdmxCodelist
 from pysdmx.model.dataflow import Component, DataStructureDefinition, Role
 from pysdmx.model.message import Message
 
-from py_load_eurostat.parser import SdmxParser
+from py_load_eurostat.parser import InventoryParser, SdmxParser, TsvParser
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
@@ -108,21 +110,17 @@ def test_sdmx_parser_codelist(mocker):
     assert codelist.codes["DE"].name == "Germany"
 
 
-from datetime import datetime, timezone
-
-import pandas as pd
-
-from py_load_eurostat.parser import InventoryParser
-
-
 @pytest.fixture
 def sample_inventory_path(tmp_path: Path) -> Path:
     """Creates a sample inventory file for testing."""
     # This content mimics the new inventory file format
     content = (
-        "Code\tType\tSource dataset\tLast data change\tLast structural change\tData download url (tsv)\n"
-        "tps00001\tDATASET\t-\t2024-07-26T23:00:00+0200\t2024-03-13T23:00:00+0100\thttps://example.com/data/tps00001.tsv.gz\n"
-        "another_dataset\tDATASET\t-\t2024-07-25T23:00:00+0200\t2024-03-13T23:00:00+0100\thttps://example.com/data/another_dataset.tsv.gz\n"
+        "Code\tType\tSource dataset\tLast data change\t"
+        "Last structural change\tData download url (tsv)\n"
+        "tps00001\tDATASET\t-\t2024-07-26T23:00:00+0200\t"
+        "2024-03-13T23:00:00+0100\thttps://example.com/data/tps00001.tsv.gz\n"
+        "another_dataset\tDATASET\t-\t2024-07-25T23:00:00+0200\t"
+        "2024-03-13T23:00:00+0100\thttps://example.com/data/another_dataset.tsv.gz\n"
     )
     inventory_file = tmp_path / "sample_inventory.tsv"
     inventory_file.write_text(content, encoding="utf-8")
@@ -136,7 +134,9 @@ def test_inventory_parser(sample_inventory_path: Path):
     # Test getting a valid download URL
     expected_url = "https://example.com/data/tps00001.tsv.gz"
     assert parser.get_download_url("tps00001") == expected_url
-    assert parser.get_download_url("TPS00001") == expected_url  # Test case-insensitivity
+    assert (
+        parser.get_download_url("TPS00001") == expected_url
+    )  # Test case-insensitivity
 
     # Test getting a non-existent dataset
     assert parser.get_download_url("non_existent_dataset") is None
@@ -164,9 +164,6 @@ def test_inventory_parser_unparsable_file(tmp_path: Path):
     unparsable_file.write_text('"a" "b" "c"\n"d" "e')  # Malformed CSV
     with pytest.raises(Exception):
         InventoryParser(unparsable_file)
-
-
-from py_load_eurostat.parser import TsvParser
 
 
 def test_tsv_parser_bad_header():
@@ -239,6 +236,7 @@ def test_sdmx_parser_wrong_type_codelist():
 class TestSdmxParserErrorCases:
     def test_parse_dsd_no_structures(self, tmp_path, mocker):
         from unittest.mock import MagicMock
+
         mock_message = MagicMock()
         mock_message.structures = []
         mocker.patch("py_load_eurostat.parser.read_sdmx", return_value=mock_message)
@@ -250,6 +248,7 @@ class TestSdmxParserErrorCases:
 
     def test_parse_dsd_no_dsd_node_no_dataflow(self, tmp_path, mocker):
         from unittest.mock import MagicMock
+
         mock_message = MagicMock()
         mock_message.structures = [MagicMock()]  # Not a DSD
         mock_message.dataflow = {}
@@ -262,6 +261,7 @@ class TestSdmxParserErrorCases:
 
     def test_parse_codelist_no_structures(self, tmp_path, mocker):
         from unittest.mock import MagicMock
+
         mock_message = MagicMock()
         mock_message.structures = []
         mocker.patch("py_load_eurostat.parser.read_sdmx", return_value=mock_message)

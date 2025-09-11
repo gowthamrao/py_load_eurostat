@@ -1,9 +1,11 @@
-import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from py_load_eurostat.pipeline import run_batch_update, run_pipeline
-from py_load_eurostat.config import AppSettings
+
+import pytest
 import yaml
+
+from py_load_eurostat.config import AppSettings
+from py_load_eurostat.pipeline import run_batch_update, run_pipeline
 
 
 @pytest.fixture
@@ -17,7 +19,11 @@ def mock_settings(tmp_path):
 @patch("py_load_eurostat.pipeline.InventoryParser")
 @patch("py_load_eurostat.pipeline.run_pipeline")
 def test_run_batch_update_file_not_found(
-    mock_run_pipeline, mock_inventory_parser, mock_fetcher, mock_get_loader, mock_settings
+    mock_run_pipeline,
+    mock_inventory_parser,
+    mock_fetcher,
+    mock_get_loader,
+    mock_settings,
 ):
     """Test that FileNotFoundError is raised if the datasets file does not exist."""
     with pytest.raises(FileNotFoundError):
@@ -29,7 +35,12 @@ def test_run_batch_update_file_not_found(
 @patch("py_load_eurostat.pipeline.InventoryParser")
 @patch("py_load_eurostat.pipeline.run_pipeline")
 def test_run_batch_update_empty_datasets_file(
-    mock_run_pipeline, mock_inventory_parser, mock_fetcher, mock_get_loader, mock_settings, tmp_path
+    mock_run_pipeline,
+    mock_inventory_parser,
+    mock_fetcher,
+    mock_get_loader,
+    mock_settings,
+    tmp_path,
 ):
     """Test that the function exits gracefully if the datasets file is empty."""
     datasets_file = tmp_path / "empty.yml"
@@ -44,7 +55,12 @@ def test_run_batch_update_empty_datasets_file(
 @patch("py_load_eurostat.pipeline.InventoryParser")
 @patch("py_load_eurostat.pipeline.run_pipeline")
 def test_run_batch_update_dataset_not_found(
-    mock_run_pipeline, mock_inventory_parser, mock_fetcher, mock_get_loader, mock_settings, tmp_path
+    mock_run_pipeline,
+    mock_inventory_parser,
+    mock_fetcher,
+    mock_get_loader,
+    mock_settings,
+    tmp_path,
 ):
     """Test that a dataset not found in the inventory is skipped."""
     datasets_file = tmp_path / "datasets.yml"
@@ -62,14 +78,21 @@ def test_run_batch_update_dataset_not_found(
 @patch("py_load_eurostat.pipeline.InventoryParser")
 @patch("py_load_eurostat.pipeline.run_pipeline")
 def test_run_batch_update_exception_handling(
-    mock_run_pipeline, mock_inventory_parser, mock_fetcher, mock_get_loader, mock_settings, tmp_path
+    mock_run_pipeline,
+    mock_inventory_parser,
+    mock_fetcher,
+    mock_get_loader,
+    mock_settings,
+    tmp_path,
 ):
     """Test that an exception during dataset processing is handled."""
     datasets_file = tmp_path / "datasets.yml"
     with open(datasets_file, "w") as f:
         yaml.dump({"datasets": ["failing_dataset"]}, f)
 
-    mock_inventory_parser.return_value.get_last_update_timestamp.return_value = "2024-01-01"
+    mock_inventory_parser.return_value.get_last_update_timestamp.return_value = (
+        "2024-01-01"
+    )
     mock_run_pipeline.side_effect = Exception("Pipeline failed")
 
     # This should not raise an exception
@@ -97,7 +120,13 @@ def test_run_pipeline_dataset_not_in_inventory(
 @patch("py_load_eurostat.pipeline.TsvParser")
 @patch("py_load_eurostat.pipeline.Transformer")
 def test_run_pipeline_save_state_fails(
-    mock_transformer, mock_tsv_parser, mock_sdmx_parser, mock_inventory_parser, mock_fetcher, mock_get_loader, mock_settings
+    mock_transformer,
+    mock_tsv_parser,
+    mock_sdmx_parser,
+    mock_inventory_parser,
+    mock_fetcher,
+    mock_get_loader,
+    mock_settings,
 ):
     """Test that a failure to save the ingestion state is logged."""
     mock_loader = MagicMock()
@@ -105,8 +134,12 @@ def test_run_pipeline_save_state_fails(
     mock_get_loader.return_value = mock_loader
 
     # Mock other components to run through the pipeline
-    mock_inventory_parser.return_value.get_last_update_timestamp.return_value = "2024-01-01"
-    mock_inventory_parser.return_value.get_download_url.return_value = "http://example.com"
+    mock_inventory_parser.return_value.get_last_update_timestamp.return_value = (
+        "2024-01-01"
+    )
+    mock_inventory_parser.return_value.get_download_url.return_value = (
+        "http://example.com"
+    )
     mock_tsv_parser.return_value.parse.return_value = (iter([]), [], [])
     mock_loader.bulk_load_staging.return_value = ("staging_table", 0)
 

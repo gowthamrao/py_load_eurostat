@@ -6,6 +6,8 @@ ensuring that schema creation, bulk loading (COPY), and the atomic table
 swap logic in finalize_load work as expected.
 """
 
+from datetime import datetime, timezone
+
 import pytest
 from psycopg.rows import dict_row
 from testcontainers.postgres import PostgresContainer
@@ -18,6 +20,7 @@ from py_load_eurostat.models import (
     Code,
     Codelist,
     Dimension,
+    IngestionHistory,
     Measure,
     Observation,
 )
@@ -315,11 +318,21 @@ def tps00001_dsd() -> DSD:
 def tps00001_initial_stream():
     """Data stream for the initial load of tps00001."""
     observations = [
-        Observation(dimensions={"geo": "EU27_2020"}, time_period="2022", value=10.0, flags=None),
-        Observation(dimensions={"geo": "EU27_2020"}, time_period="2021", value=9.5, flags=None),
-        Observation(dimensions={"geo": "DE"}, time_period="2022", value=12.5, flags="p"),
-        Observation(dimensions={"geo": "DE"}, time_period="2021", value=11.8, flags="c"),
-        Observation(dimensions={"geo": "FR"}, time_period="2021", value=8.2, flags=None),
+        Observation(
+            dimensions={"geo": "EU27_2020"}, time_period="2022", value=10.0, flags=None
+        ),
+        Observation(
+            dimensions={"geo": "EU27_2020"}, time_period="2021", value=9.5, flags=None
+        ),
+        Observation(
+            dimensions={"geo": "DE"}, time_period="2022", value=12.5, flags="p"
+        ),
+        Observation(
+            dimensions={"geo": "DE"}, time_period="2021", value=11.8, flags="c"
+        ),
+        Observation(
+            dimensions={"geo": "FR"}, time_period="2021", value=8.2, flags=None
+        ),
     ]
     yield from observations
 
@@ -328,13 +341,23 @@ def tps00001_modified_stream():
     """Data stream for the modified (delta) load of tps00001."""
     observations = [
         # DE 2022 is updated from 12.5 to 15.0
-        Observation(dimensions={"geo": "DE"}, time_period="2022", value=15.0, flags="p"),
-        Observation(dimensions={"geo": "DE"}, time_period="2021", value=11.8, flags="c"),
+        Observation(
+            dimensions={"geo": "DE"}, time_period="2022", value=15.0, flags="p"
+        ),
+        Observation(
+            dimensions={"geo": "DE"}, time_period="2021", value=11.8, flags="c"
+        ),
         # FR is unchanged
-        Observation(dimensions={"geo": "FR"}, time_period="2021", value=8.2, flags=None),
+        Observation(
+            dimensions={"geo": "FR"}, time_period="2021", value=8.2, flags=None
+        ),
         # IT is a new geo
-        Observation(dimensions={"geo": "IT"}, time_period="2022", value=7.5, flags=None),
-        Observation(dimensions={"geo": "IT"}, time_period="2021", value=7.0, flags=None),
+        Observation(
+            dimensions={"geo": "IT"}, time_period="2022", value=7.5, flags=None
+        ),
+        Observation(
+            dimensions={"geo": "IT"}, time_period="2021", value=7.0, flags=None
+        ),
     ]
     yield from observations
 
@@ -379,7 +402,9 @@ def test_delta_load_with_merge_strategy(
 
         # --- 3. Final Verification ---
         with loader.conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(f"SELECT * FROM {schema}.{table_name} ORDER BY geo, time_period;")
+            cur.execute(
+                f"SELECT * FROM {schema}.{table_name} ORDER BY geo, time_period;"
+            )
             final_results = {
                 (r["geo"], r["time_period"]): (r["obs_value"], r["obs_flags"])
                 for r in cur.fetchall()
@@ -411,11 +436,6 @@ def test_delta_load_with_merge_strategy(
             loader.close_connection()
 
 
-from datetime import datetime, timezone
-
-from py_load_eurostat.models import IngestionHistory
-
-
 @pytest.mark.integration
 def test_manage_codelists_insert_and_update(db_settings: DatabaseSettings):
     """
@@ -432,14 +452,18 @@ def test_manage_codelists_insert_and_update(db_settings: DatabaseSettings):
         id=codelist_id,
         version="1.0",
         codes={
-            "DE": Code(id="DE", name="Germany", description="Federal Republic of Germany"),
+            "DE": Code(
+                id="DE", name="Germany", description="Federal Republic of Germany"
+            ),
             "FR": Code(id="FR", name="France", description=None),
         },
     )
 
     try:
         # 2. First run: Insert new codelists
-        loader.manage_codelists(codelists={codelist_id: initial_codelist}, schema=schema)
+        loader.manage_codelists(
+            codelists={codelist_id: initial_codelist}, schema=schema
+        )
 
         # 3. Verification of insert
         with loader.conn.cursor(row_factory=dict_row) as cur:
@@ -457,14 +481,20 @@ def test_manage_codelists_insert_and_update(db_settings: DatabaseSettings):
             id=codelist_id,
             version="1.1",
             codes={
-                "DE": Code(id="DE", name="Germany (updated)", description="Federal Republic of Germany"),
+                "DE": Code(
+                    id="DE",
+                    name="Germany (updated)",
+                    description="Federal Republic of Germany",
+                ),
                 "FR": Code(id="FR", name="France", description=None),
                 "IT": Code(id="IT", name="Italy", description="Italian Republic"),
             },
         )
 
         # 5. Second run: Update existing and insert new
-        loader.manage_codelists(codelists={codelist_id: updated_codelist}, schema=schema)
+        loader.manage_codelists(
+            codelists={codelist_id: updated_codelist}, schema=schema
+        )
 
         # 6. Verification of update and insert
         with loader.conn.cursor(row_factory=dict_row) as cur:
@@ -563,8 +593,9 @@ def test_schema_evolution_raises_on_type_mismatch_in_code(
             )
 
         assert "Data type mismatch for column 'geo'" in str(excinfo.value)
-        assert "Existing type 'text' is not compatible with required type 'INTEGER'" in str(
-            excinfo.value
+        assert (
+            "Existing type 'text' is not compatible with required type 'INTEGER'"
+            in str(excinfo.value)
         )
     finally:
         # Clean up

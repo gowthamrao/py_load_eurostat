@@ -100,7 +100,8 @@ def test_full_pipeline_with_sqlite_via_factory(
             assert cur.fetchone()[0] == expected_rows
 
             cur = conn.execute(
-                f"SELECT geo FROM {schema}__{data_table_name} WHERE time_period = '2022' AND obs_value = 12.5"
+                f"SELECT geo FROM {schema}__{data_table_name} "
+                "WHERE time_period = '2022' AND obs_value = 12.5"
             )
             assert cur.fetchone()[0] == expected_geo
     finally:

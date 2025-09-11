@@ -1,9 +1,10 @@
-import pytest
-import httpx
-from pathlib import Path
 from urllib.parse import urljoin
-from py_load_eurostat.fetcher import Fetcher
+
+import httpx
+import pytest
+
 from py_load_eurostat.config import AppSettings
+from py_load_eurostat.fetcher import Fetcher
 
 
 @pytest.fixture
@@ -66,7 +67,9 @@ def test_fetch_uses_cache(app_settings, mocker):
     fetcher._fetch("http://example.com/cached", "cached_file")
 
     mock_download.assert_not_called()
-    assert any("Found in cache" in call[0][0] for call in mock_logger_info.call_args_list)
+    assert any(
+        "Found in cache" in call[0][0] for call in mock_logger_info.call_args_list
+    )
 
 
 def test_fetch_downloads_if_not_in_cache(app_settings, mocker):
@@ -80,16 +83,15 @@ def test_fetch_downloads_if_not_in_cache(app_settings, mocker):
         "http://example.com/not_cached", "not_cached_file"
     )
 
+
 def test_get_toc_url(app_settings, mocker):
     """Test that the get_toc method constructs the correct URL."""
     fetcher = Fetcher(app_settings)
     mock_fetch = mocker.patch("py_load_eurostat.fetcher.Fetcher._fetch")
     fetcher.get_toc()
     expected_url = f"{app_settings.eurostat.base_url}/files/inventory?type=data"
-    mock_fetch.assert_called_once_with(
-        expected_url,
-        "inventory.tsv"
-    )
+    mock_fetch.assert_called_once_with(expected_url, "inventory.tsv")
+
 
 def test_get_dataset_tsv_url(app_settings, mocker):
     """Test that get_dataset_tsv constructs the correct absolute URL."""
@@ -114,6 +116,7 @@ def test_get_dataset_tsv_url(app_settings, mocker):
         "my_dataset_abs.tsv.gz",
     )
 
+
 def test_get_dsd_xml_url(app_settings, mocker):
     """Test that get_dsd_xml constructs the correct URL."""
     fetcher = Fetcher(app_settings)
@@ -126,6 +129,7 @@ def test_get_dsd_xml_url(app_settings, mocker):
         "/latest?references=datastructure"
     )
     mock_fetch.assert_called_once_with(expected_url, "dsd_nama_10_gdp.xml")
+
 
 def test_get_codelist_xml_url(app_settings, mocker):
     """Test that get_codelist_xml constructs the correct URL."""

@@ -314,7 +314,8 @@ class PostgresLoader(LoaderInterface):
                             continue
 
                         logger.info(
-                            f"Adding foreign key '{fk_name}' to table '{table_name}' on column '{dim.id}'."
+                            f"Adding foreign key '{fk_name}' to table '{table_name}' "
+                            f"on column '{dim.id}'."
                         )
                         fk_sql = sql.SQL(
                             """
@@ -398,7 +399,8 @@ class PostgresLoader(LoaderInterface):
                         for data_chunk in codelist_data_generator(codelist_obj):
                             copy.write(data_chunk)
                     logger.info(
-                        f"Loaded {cur.rowcount} rows into staging table for codelist '{cl_id}'"
+                        f"Loaded {cur.rowcount} rows into staging table for "
+                        f"codelist '{cl_id}'"
                     )
 
                     # Use MERGE (INSERT ... ON CONFLICT) for efficient updates
@@ -511,7 +513,9 @@ class PostgresLoader(LoaderInterface):
         else:
             raise ValueError(f"Unknown finalization strategy: '{strategy}'")
 
-    def _finalize_swap(self, staging_table: str, target_table: str, schema: str) -> None:
+    def _finalize_swap(
+        self, staging_table: str, target_table: str, schema: str
+    ) -> None:
         logger.info(
             f"Finalizing load from '{staging_table}' to '{target_table}' "
             "using atomic table swap."
@@ -550,7 +554,9 @@ class PostgresLoader(LoaderInterface):
                 )
         logger.info("Load finalized successfully. Tables swapped.")
 
-    def _finalize_merge(self, staging_table: str, target_table: str, schema: str) -> None:
+    def _finalize_merge(
+        self, staging_table: str, target_table: str, schema: str
+    ) -> None:
         if not self.dsd:
             raise RuntimeError("DSD must be set to perform a merge.")
 
@@ -655,7 +661,8 @@ class PostgresLoader(LoaderInterface):
             values = list(record_dict.values())
 
             query = sql.SQL(
-                "INSERT INTO {schema}._ingestion_history ({fields}) VALUES ({placeholders})"
+                "INSERT INTO {schema}._ingestion_history ({fields}) "
+                "VALUES ({placeholders})"
             ).format(
                 schema=sql.Identifier(schema),
                 fields=columns,

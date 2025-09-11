@@ -82,7 +82,6 @@ def test_get_required_columns_dynamic_types(mocker, mock_db_settings):
 def test_init_raises_error_if_no_password(mock_db_settings):
     """Test that ValueError is raised if the password is not provided."""
     import pytest
-    from py_load_eurostat.config import DatabaseSettings
 
     mock_db_settings.password = None
     with pytest.raises(ValueError, match="password is required"):

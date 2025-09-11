@@ -103,7 +103,8 @@ class TestSQLiteLoader:
             )
             conn = loader.conn
             res = conn.execute(
-                f"SELECT name FROM sqlite_master WHERE type='table' AND name='{data_table_fqn}'"
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (data_table_fqn,),
             )
             assert res.fetchone() is not None
 
@@ -126,11 +127,14 @@ class TestSQLiteLoader:
             assert res[0] == 2
 
             # 4. Finalize Load
-            loader.finalize_load(staging_table, table_name, data_schema, strategy="swap")
+            loader.finalize_load(
+                staging_table, table_name, data_schema, strategy="swap"
+            )
             res = conn.execute(f"SELECT COUNT(*) FROM {data_table_fqn}").fetchone()
             assert res[0] == 2
             res = conn.execute(
-                f"SELECT name FROM sqlite_master WHERE type='table' AND name='{staging_table}'"
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (staging_table,),
             )
             assert res.fetchone() is None
 
@@ -170,7 +174,9 @@ class TestSQLiteLoader:
     def test_manage_codelists_empty(self, db_settings):
         """Test that manage_codelists handles empty codelists gracefully."""
         loader = SQLiteLoader(db_settings)
-        loader.manage_codelists({"EMPTY_CL": Codelist(id="EMPTY_CL", version="1.0", codes={})}, "meta")
+        loader.manage_codelists(
+            {"EMPTY_CL": Codelist(id="EMPTY_CL", version="1.0", codes={})}, "meta"
+        )
         # No assertion needed, just checking that it doesn't crash
 
     def test_manage_codelists_error_rolls_back(self, db_settings, mocker):
@@ -182,7 +188,9 @@ class TestSQLiteLoader:
         mock_cursor.executemany.side_effect = sqlite3.Error("DB error")
         loader.conn = mock_conn
 
-        codelist = Codelist(id="CL_TEST", version="1.0", codes={"a": Code(id="a", name="A")})
+        codelist = Codelist(
+            id="CL_TEST", version="1.0", codes={"a": Code(id="a", name="A")}
+        )
         with pytest.raises(sqlite3.Error):
             loader.manage_codelists({"CL_TEST": codelist}, "meta")
 
@@ -229,6 +237,7 @@ class TestSQLiteLoader:
     def test_save_ingestion_state_error_rolls_back(self, db_settings, mocker):
         """Test that an error during saving ingestion state triggers a rollback."""
         from py_load_eurostat.models import IngestionHistory
+
         loader = SQLiteLoader(db_settings)
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -242,7 +251,12 @@ class TestSQLiteLoader:
         mock_cursor.execute.side_effect = execute_side_effect
         loader.conn = mock_conn
 
-        record = IngestionHistory(dataset_id="test", dsd_hash="hash", load_strategy="Full", representation="Standard")
+        record = IngestionHistory(
+            dataset_id="test",
+            dsd_hash="hash",
+            load_strategy="Full",
+            representation="Standard",
+        )
 
         with pytest.raises(Exception):
             loader.save_ingestion_state(record, "public")

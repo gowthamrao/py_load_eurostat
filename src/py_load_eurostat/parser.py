@@ -40,7 +40,10 @@ class SdmxParser:
         except (Invalid, KeyError) as e:
             # Catching KeyError for pysdmx internal issues with wrong file types
             logger.error(f"pysdmx failed to parse {sdmx_path}: {e}")
-            raise ValueError(f"Failed to parse SDMX file {sdmx_path}. It may be empty, malformed, or not a DSD.") from e
+            raise ValueError(
+                f"Failed to parse SDMX file {sdmx_path}. "
+                "It may be empty, malformed, or not a DSD."
+            ) from e
 
         if not message.structures:
             raise ValueError("No structures found in the SDMX message")
@@ -137,7 +140,10 @@ class SdmxParser:
             message = read_sdmx(sdmx_path, validate=False)
         except (Invalid, KeyError) as e:
             logger.error(f"pysdmx failed to parse {sdmx_path}: {e}")
-            raise ValueError(f"Failed to parse SDMX file {sdmx_path}. It may be empty, malformed, or not a codelist.") from e
+            raise ValueError(
+                f"Failed to parse SDMX file {sdmx_path}. "
+                "It may be empty, malformed, or not a codelist."
+            ) from e
 
         if not message.structures:
             raise ValueError("No structures found in the SDMX message")
@@ -193,14 +199,19 @@ class TsvParser:
             chunksize=CHUNK_SIZE,
         )
 
-        def chunk_processor(iterator: Iterator[pd.DataFrame]) -> Generator[pd.DataFrame, None, None]:
+        def chunk_processor(
+            iterator: Iterator[pd.DataFrame],
+        ) -> Generator[pd.DataFrame, None, None]:
             logger.info(f"Begin streaming chunks from {self.tsv_path}")
             for i, chunk in enumerate(iterator):
-                chunk.rename(columns={chunk.columns[0]: "dimensions_combined"}, inplace=True)
+                chunk.rename(
+                    columns={chunk.columns[0]: "dimensions_combined"}, inplace=True
+                )
 
                 def parse_eurostat_dims(dim_string: str) -> list[str]:
                     import csv
                     from io import StringIO
+
                     if not isinstance(dim_string, str):
                         return [None] * len(dimension_cols)
                     return next(csv.reader(StringIO(dim_string)))
@@ -237,11 +248,13 @@ class InventoryParser:
 
             # Rename columns for easier access
             df.columns = [col.strip() for col in df.columns]
-            df = df.rename(columns={
-                "Code": "code",
-                "Last data change": "last_update",
-                "Data download url (tsv)": "download_url"
-            })
+            df = df.rename(
+                columns={
+                    "Code": "code",
+                    "Last data change": "last_update",
+                    "Data download url (tsv)": "download_url",
+                }
+            )
 
             # Filter for datasets and required columns
             df = df[df["Type"] == "DATASET"][["code", "last_update", "download_url"]]
@@ -255,14 +268,16 @@ class InventoryParser:
 
             self._inventory_data = df.to_dict("index")
             logger.info(
-                f"Successfully parsed {len(self._inventory_data)} dataset entries from inventory."
+                f"Successfully parsed {len(self._inventory_data)} "
+                "dataset entries from inventory."
             )
         except FileNotFoundError:
             logger.error(f"Inventory file not found at {self.inventory_path}")
             raise
         except Exception as e:
             logger.error(
-                f"Failed to parse inventory file {self.inventory_path}: {e}", exc_info=True
+                f"Failed to parse inventory file {self.inventory_path}: {e}",
+                exc_info=True,
             )
             raise
 
