@@ -4,6 +4,7 @@ Unit tests for the parser module.
 
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
@@ -34,7 +35,6 @@ def test_sdmx_parser_dsd(mocker):
                 required=True,
                 role=Role.DIMENSION,
                 concept="geo",
-                local_codes="CL_GEO",
             ),
             Component(
                 id="TIME_PERIOD", required=True, role=Role.DIMENSION, concept="time"
@@ -52,14 +52,12 @@ def test_sdmx_parser_dsd(mocker):
         ],
     )
     mock_message = Message(structures=[mock_pysdmx_dsd])
-
-    # Mock the read_sdmx function to return our mock message
     mocker.patch("py_load_eurostat.parser.read_sdmx", return_value=mock_message)
-    # Also mock the XML parsing fallback to isolate the test
-    mocker.patch(
-        "py_load_eurostat.parser.SdmxParser._extract_codelist_map_from_xml",
-        return_value={"geo": "CL_GEO"},
-    )
+
+    # Mock the enumeration property to return a mock with an id
+    mocker.patch.object(
+        Component, "enumeration", new_callable=mocker.PropertyMock
+    ).return_value = MagicMock(id="CL_GEO")
 
     # 2. Act
     parser = SdmxParser()
