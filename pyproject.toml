@@ -47,7 +47,7 @@ dev = [
     "pytest",
     "pytest-cov",
     "testcontainers",
-    "ruff",
+    "ruff==0.13.0",
     "mypy",
     "pytest-mock",
     "pytest-httpserver",
@@ -87,4 +87,7 @@ testpaths = [
 # python_paths = "src"
 markers = [
     "integration: marks tests as integration tests",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:testcontainers.*:",
 ]
