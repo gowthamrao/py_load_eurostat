@@ -64,7 +64,6 @@ class SdmxParser:
                 "Could not find a valid DataStructureDefinition in the SDMX message."
             )
 
-        dim_to_cl_map = self._extract_codelist_map_from_xml(sdmx_path)
         dimensions: list[Dimension] = []
         attributes: list[Attribute] = []
         measures: list[Measure] = []
@@ -78,7 +77,9 @@ class SdmxParser:
                     Dimension(
                         id=component.id,
                         name=component.name,
-                        codelist_id=dim_to_cl_map.get(component.id.lower()),
+                        codelist_id=component.enumeration.id
+                        if component.enumeration
+                        else None,
                         position=i,
                         data_type=data_type,
                     )
