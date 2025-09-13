@@ -80,7 +80,7 @@ check_untyped_defs = true
 
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "-ra -q --cov=src/py_load_eurostat --cov-report=term-missing"
+addopts = "-ra -q --cov=src/py_load_eurostat --cov-report=term-missing --cov-report=xml"
 testpaths = [
     "tests",
 ]

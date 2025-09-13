@@ -21,6 +21,8 @@ build/
 .mypy_cache/
 .ruff_cache/
 .coverage
+coverage.xml
+.coverage.*
 
 # OS-specific
 .DS_Store
