@@ -89,9 +89,8 @@ def test_incomplete_loader_raises_type_error():
 
         class IncompleteLoader(LoaderInterface):
             def prepare_schema(self, dsd, table_name, schema, rep, meta_schema) -> None:
-                return super().prepare_schema(
-                    dsd, table_name, schema, rep, meta_schema
-                )
+                return super().prepare_schema(dsd, table_name, schema, rep, meta_schema)
+
         IncompleteLoader()
 
     assert "Can't instantiate abstract class" in str(excinfo.value)

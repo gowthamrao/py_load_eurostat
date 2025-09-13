@@ -275,14 +275,13 @@ def test_tsv_parser_malformed_dim_string(mocker, tmp_path):
     Tests that TsvParser handles rows with malformed dimension strings (NaN).
     """
     # 1. Arrange: Mock pandas.read_csv to return a chunk with a NaN value
-    mock_chunk = pd.DataFrame(
-        {"unit,geo\\time": [pd.NA], "2022": [100.0]}
-    )
+    mock_chunk = pd.DataFrame({"unit,geo\\time": [pd.NA], "2022": [100.0]})
     mocker.patch("pandas.read_csv", return_value=iter([mock_chunk]))
 
     # We still need a valid-looking file for the header parsing to work
     dummy_path = tmp_path / "dummy.tsv.gz"
     import gzip
+
     with gzip.open(dummy_path, "wt") as f:
         f.write("unit,geo\\time\t2022\n")
 

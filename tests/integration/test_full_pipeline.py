@@ -7,13 +7,12 @@ import logging
 from pathlib import Path
 
 import pytest
-from psycopg.rows import class_row, dict_row
+from psycopg.rows import dict_row
 from pytest_httpserver import HTTPServer
 
 from py_load_eurostat import pipeline
 from py_load_eurostat.config import AppSettings, DatabaseSettings
 from py_load_eurostat.loader.postgresql import PostgresLoader
-from py_load_eurostat.models import IngestionHistory
 
 # Set a logger for debugging the test
 logger = logging.getLogger(__name__)
