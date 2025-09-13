@@ -54,3 +54,9 @@ jobs:
         export PY_LOAD_EUROSTAT_DB__PASSWORD=testpassword
         export PY_LOAD_EUROSTAT_DB__NAME=testdb
         pdm run pytest
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        # token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
+        file: ./coverage.xml
+        fail_ci_if_error: true
