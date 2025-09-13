@@ -3,7 +3,7 @@ from pathlib import Path
 from py_load_eurostat.config import AppSettings, DatabaseType
 
 
-def test_settings_load_from_env_file(tmp_path: Path):
+def test_settings_load_from_env_file(tmp_path: Path, monkeypatch):
     """
     Verify that settings are correctly loaded from a .env file.
     """
@@ -15,6 +15,11 @@ def test_settings_load_from_env_file(tmp_path: Path):
     )
     env_file = tmp_path / ".env"
     env_file.write_text(env_content)
+
+    # Unset environment variables that might interfere with the test
+    monkeypatch.delenv("PY_LOAD_EUROSTAT_DB_TYPE", raising=False)
+    monkeypatch.delenv("PY_LOAD_EUROSTAT_DB__NAME", raising=False)
+    monkeypatch.delenv("PY_LOAD_EUROSTAT_LOG__LEVEL", raising=False)
 
     # 2. Instantiate the settings object, passing the path to the .env file directly.
     settings = AppSettings(_env_file=env_file)
