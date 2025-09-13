@@ -23,6 +23,7 @@ classifiers = [
 ]
 dependencies = [
     "httpx",
+    "numpy",
     "pandas",
     "pysdmx[xml]",
     "psycopg[binary]>=3.1",
