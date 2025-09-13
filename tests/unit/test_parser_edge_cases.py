@@ -1,10 +1,11 @@
-import pytest
-from pathlib import Path
-from py_load_eurostat.parser import SdmxParser, TsvParser
-import xml.etree.ElementTree as ET
 import gzip
-import pandas as pd
+from pathlib import Path
 from unittest.mock import MagicMock
+
+import pytest
+
+from py_load_eurostat.parser import SdmxParser, TsvParser
+
 
 @pytest.fixture
 def malformed_tsv_file(tmp_path: Path) -> Path:
@@ -18,6 +19,7 @@ def malformed_tsv_file(tmp_path: Path) -> Path:
     with gzip.open(file_path, "wt", encoding="utf-8") as f:
         f.write(content)
     return file_path
+
 
 @pytest.fixture
 def dsd_xml_with_codelist_map(tmp_path: Path) -> Path:
@@ -48,8 +50,11 @@ def dsd_xml_with_codelist_map(tmp_path: Path) -> Path:
     file_path.write_text(content)
     return file_path
 
+
 def test_parse_dsd_from_dataflow_no_structures(mocker):
-    """Test that parse_dsd_from_dataflow raises ValueError when SDMX has no structures."""
+    """
+    Test that parse_dsd_from_dataflow raises ValueError when SDMX has no structures.
+    """
     mock_message = MagicMock()
     mock_message.structures = []
     mocker.patch("py_load_eurostat.parser.read_sdmx", return_value=mock_message)
@@ -57,6 +62,7 @@ def test_parse_dsd_from_dataflow_no_structures(mocker):
 
     with pytest.raises(ValueError, match="No structures found in the SDMX message"):
         parser.parse_dsd_from_dataflow(Path("dummy/path.sdmx"))
+
 
 def test_parse_codelist_no_structures(mocker):
     """Test that parse_codelist raises ValueError when SDMX has no structures."""
@@ -68,6 +74,7 @@ def test_parse_codelist_no_structures(mocker):
     with pytest.raises(ValueError, match="No structures found in the SDMX message"):
         parser.parse_codelist(Path("dummy/path.sdmx"))
 
+
 def test_extract_codelist_map_from_xml(dsd_xml_with_codelist_map: Path):
     """Test the _extract_codelist_map_from_xml method directly."""
     parser = SdmxParser()
@@ -76,6 +83,7 @@ def test_extract_codelist_map_from_xml(dsd_xml_with_codelist_map: Path):
         "dim1": "CL_DIM1",
         "dim2": "CL_DIM2",
     }
+
 
 def test_tsv_parser_with_malformed_row(malformed_tsv_file: Path):
     """Test that the TsvParser can handle rows with non-string dimension values."""
@@ -88,7 +96,7 @@ def test_tsv_parser_with_malformed_row(malformed_tsv_file: Path):
     df = processed_chunks[0]
 
     # The row's dimensions should be a list of Nones
-    assert df.iloc[0]['unit'] is None
-    assert df.iloc[0]['sex'] is None
-    assert df.iloc[0]['age'] is None
-    assert df.iloc[0]['geo'] is None
+    assert df.iloc[0]["unit"] is None
+    assert df.iloc[0]["sex"] is None
+    assert df.iloc[0]["age"] is None
+    assert df.iloc[0]["geo"] is None

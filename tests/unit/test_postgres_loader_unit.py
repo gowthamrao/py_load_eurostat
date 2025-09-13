@@ -1,7 +1,8 @@
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
+
 from py_load_eurostat.loader.postgresql import PostgresLoader
-from py_load_eurostat.config import DatabaseSettings
 
 
 @pytest.mark.parametrize(
@@ -26,26 +27,12 @@ from py_load_eurostat.config import DatabaseSettings
 def test_normalize_pg_type(input_type, expected_type):
     """Test that _normalize_pg_type correctly normalizes various PG type strings."""
     # We don't need a real connection for this test
-    db_settings = DatabaseSettings(
-        host="localhost",
-        port=5432,
-        user="user",
-        password="password",
-        name="testdb",
-    )
     loader = PostgresLoader.__new__(PostgresLoader)
     assert loader._normalize_pg_type(input_type) == expected_type
 
 
 def test_finalize_merge_raises_error_if_dsd_is_not_set():
     """Test that _finalize_merge raises a RuntimeError if DSD is not set."""
-    db_settings = DatabaseSettings(
-        host="localhost",
-        port=5432,
-        user="user",
-        password="password",
-        name="testdb",
-    )
     # Create a loader instance without a real connection
     loader = PostgresLoader.__new__(PostgresLoader)
     loader.dsd = None
@@ -56,19 +43,12 @@ def test_finalize_merge_raises_error_if_dsd_is_not_set():
 
 def test_close_connection_handles_closed_and_none_connections():
     """Test that close_connection can be called multiple times safely."""
-    db_settings = DatabaseSettings(
-        host="localhost",
-        port=5432,
-        user="user",
-        password="password",
-        name="testdb",
-    )
     # Create a loader instance without a real connection for the first part
     loader = PostgresLoader.__new__(PostgresLoader)
 
     # Test with conn = None
     loader.conn = None
-    loader.close_connection() # Should not raise
+    loader.close_connection()  # Should not raise
 
     # Test with a mock connection
     mock_conn = MagicMock()

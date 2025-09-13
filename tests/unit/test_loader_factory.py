@@ -1,5 +1,7 @@
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
+
 from py_load_eurostat.config import AppSettings, DatabaseSettings, DatabaseType
 from py_load_eurostat.loader.factory import get_loader
 from py_load_eurostat.loader.postgresql import PostgresLoader

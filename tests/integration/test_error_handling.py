@@ -1,8 +1,6 @@
-import pytest
 from typer.testing import CliRunner
 
 from py_load_eurostat.cli import app
-from py_load_eurostat.config import AppSettings
 
 
 def test_pipeline_network_error(httpserver, monkeypatch, tmp_path):
@@ -13,9 +11,7 @@ def test_pipeline_network_error(httpserver, monkeypatch, tmp_path):
     httpserver.expect_request(
         "/eurostat/api/dissemination/statistics/1.0/data/tps00001"
     ).respond_with_data("Internal Server Error", 500)
-    monkeypatch.setenv(
-        "PY_LOAD_EUROSTAT_EUROSTAT__BASE_URL", httpserver.url_for("/")
-    )
+    monkeypatch.setenv("PY_LOAD_EUROSTAT_EUROSTAT__BASE_URL", httpserver.url_for("/"))
     db_path = tmp_path / "test.db"
     monkeypatch.setenv("PY_LOAD_EUROSTAT_DB__NAME", str(db_path))
     monkeypatch.setenv("PY_LOAD_EUROSTAT_DB_TYPE", "sqlite")
@@ -55,9 +51,7 @@ def test_pipeline_parsing_error(httpserver, monkeypatch, tmp_path):
     httpserver.expect_request(
         "/eurostat/api/dissemination/sdmx/2.1/dataflow/ESTAT/tps00001"
     ).respond_with_data("malformed xml", 200)
-    monkeypatch.setenv(
-        "PY_LOAD_EUROSTAT_EUROSTAT__BASE_URL", httpserver.url_for("/")
-    )
+    monkeypatch.setenv("PY_LOAD_EUROSTAT_EUROSTAT__BASE_URL", httpserver.url_for("/"))
     db_path = tmp_path / "test.db"
     monkeypatch.setenv("PY_LOAD_EUROSTAT_DB__NAME", str(db_path))
     monkeypatch.setenv("PY_LOAD_EUROSTAT_DB_TYPE", "sqlite")
