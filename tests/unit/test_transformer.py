@@ -40,6 +40,8 @@ def mock_dsd() -> DSD:
         ("c", None, "c"),
         (" 12.34 p ", 12.34, "p"),
         (None, None, None),
+        ("", None, None),
+        ("1.2.3 p", None, "1.2.3 p"),
     ],
 )
 def test_transformer_parse_value(raw_input, expected_value, expected_flag, mock_dsd):
@@ -168,3 +170,34 @@ def test_transformer_transform_full_representation(mock_dsd):
         (obs for obs in observations if obs.dimensions.get("geo") == "EU27_2020"), None
     )
     assert eu_obs is not None
+
+
+def test_transformer_transform_full_representation_unknown_code(mock_dsd):
+    """
+    Tests that transform with 'Full' representation handles unknown codes.
+    """
+    # 1. Setup: Create mock codelists
+    geo_codelist = Codelist(
+        id="CL_GEO",
+        version="1.0",
+        codes={"DE": Code(id="DE", name="Germany")},
+    )
+    mock_codelists = {"CL_GEO": geo_codelist}
+
+    # Parse the file to get the wide dataframe
+    tsv_path = FIXTURES_DIR / "tps00001.tsv.gz"
+    parser = TsvParser(tsv_path)
+    wide_df, dim_cols, time_cols = parser.parse()
+
+    # 2. Execution: Transform with "Full" representation
+    transformer = Transformer(dsd=mock_dsd, codelists=mock_codelists)
+    observations = list(
+        transformer.transform(wide_df, dim_cols, time_cols, representation="Full")
+    )
+
+    # 3. Assertions
+    # Find the observation for FR, which is not in the codelist
+    fr_obs = next(
+        (obs for obs in observations if obs.dimensions.get("geo") == "FR"), None
+    )
+    assert fr_obs is not None
