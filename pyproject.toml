@@ -42,7 +42,7 @@ py-load-eurostat = "py_load_eurostat.cli:app"
 Homepage = "https://github.com/example/py_load_eurostat"
 Repository = "https://github.com/example/py_load_eurostat"
 
-[project.optional-dependencies]
+[tool.pdm.dev-dependencies]
 dev = [
     "pytest",
     "pytest-cov",
