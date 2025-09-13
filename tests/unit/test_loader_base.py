@@ -76,3 +76,22 @@ def test_concrete_loader_instantiation_and_method_calls():
     assert ingestion_state is None
     loader.save_ingestion_state(history_record, "schema")
     loader.close_connection()
+
+
+def test_incomplete_loader_raises_type_error():
+    """
+    Tests that instantiating a class that inherits from LoaderInterface but
+    does not implement all abstract methods raises a TypeError.
+    """
+    import pytest
+
+    with pytest.raises(TypeError) as excinfo:
+
+        class IncompleteLoader(LoaderInterface):
+            def prepare_schema(self, dsd, table_name, schema, rep, meta_schema) -> None:
+                return super().prepare_schema(
+                    dsd, table_name, schema, rep, meta_schema
+                )
+        IncompleteLoader()
+
+    assert "Can't instantiate abstract class" in str(excinfo.value)
