@@ -7,7 +7,7 @@ observational data. These models are used as Data Transfer Objects (DTOs)
 between the different layers of the pipeline.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Dict, List, Optional
 
@@ -176,7 +176,7 @@ class IngestionHistory(BaseModel):
         description="The current status of the ingestion.",
     )
     start_time: datetime = Field(
-        default_factory=lambda: datetime.now(UTC),
+        default_factory=lambda: datetime.now(timezone.utc),
         description="The start time of the ingestion process.",
     )
     end_time: Optional[datetime] = Field(
