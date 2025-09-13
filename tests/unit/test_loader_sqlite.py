@@ -262,3 +262,22 @@ class TestSQLiteLoader:
             loader.save_ingestion_state(record, "public")
 
         mock_cursor.execute.assert_any_call("ROLLBACK")
+
+    def test_get_required_columns_no_primary_measure(self, db_settings, sample_dsd):
+        """Test that _get_required_columns handles a DSD with no primary measure."""
+        loader = SQLiteLoader(db_settings)
+        sample_dsd.primary_measure_id = "NON_EXISTENT"
+        sample_dsd.measures = []
+        columns = loader._get_required_columns(sample_dsd)
+        assert columns["NON_EXISTENT"] == "REAL"
+
+    def test_get_ingestion_state_returns_none(self, db_settings, mocker):
+        """Test that get_ingestion_state returns None when no record is found."""
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = None
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mocker.patch("sqlite3.connect", return_value=mock_conn)
+        loader = SQLiteLoader(db_settings)
+        state = loader.get_ingestion_state("some_dataset", "public")
+        assert state is None

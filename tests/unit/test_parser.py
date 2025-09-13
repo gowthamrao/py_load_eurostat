@@ -268,3 +268,33 @@ class TestSdmxParserErrorCases:
         file.touch()
         with pytest.raises(ValueError, match="No structures found"):
             parser.parse_codelist(file)
+
+
+def test_tsv_parser_malformed_dim_string(mocker, tmp_path):
+    """
+    Tests that TsvParser handles rows with malformed dimension strings (NaN).
+    """
+    # 1. Arrange: Mock pandas.read_csv to return a chunk with a NaN value
+    mock_chunk = pd.DataFrame(
+        {"unit,geo\\time": [pd.NA], "2022": [100.0]}
+    )
+    mocker.patch("pandas.read_csv", return_value=iter([mock_chunk]))
+
+    # We still need a valid-looking file for the header parsing to work
+    dummy_path = tmp_path / "dummy.tsv.gz"
+    import gzip
+    with gzip.open(dummy_path, "wt") as f:
+        f.write("unit,geo\\time\t2022\n")
+
+    # 2. Act
+    parser = TsvParser(dummy_path)
+    chunk_iterator, _, _ = parser.parse()
+    processed_chunks = list(chunk_iterator)
+    result_df = processed_chunks[0]
+
+    # 3. Assert
+    # The row with the NaN dimension string should result in NaN/None values
+    # for the individual dimension columns.
+    assert result_df.shape[0] == 1
+    assert pd.isna(result_df.iloc[0]["unit"])
+    assert pd.isna(result_df.iloc[0]["geo"])

@@ -142,3 +142,11 @@ def test_finalize_merge_no_dsd_error(mock_db_settings, mocker):
     loader.dsd = None  # Ensure DSD is not set
     with pytest.raises(RuntimeError, match="DSD must be set"):
         loader._finalize_merge("staging", "target", "public")
+
+
+def test_finalize_load_unknown_strategy(mock_db_settings, mocker):
+    """Test that finalize_load raises an error for an unknown strategy."""
+    mocker.patch("py_load_eurostat.loader.postgresql.PostgresLoader._create_connection")
+    loader = PostgresLoader(db_settings=mock_db_settings)
+    with pytest.raises(ValueError, match="Unknown finalization strategy"):
+        loader.finalize_load("staging", "target", "public", "invalid_strategy")
