@@ -1,15 +1,18 @@
-import pytest
 import sqlite3
-from py_load_eurostat.loader.sqlite import SQLiteLoader
-from py_load_eurostat.models import DSD, Measure, Dimension
+
+import pytest
+
 from py_load_eurostat.config import DatabaseSettings
-from tests.unit.test_loader_sqlite import sample_dsd
+from py_load_eurostat.loader.sqlite import SQLiteLoader
+from py_load_eurostat.models import DSD, Dimension, Measure
+
 
 @pytest.fixture
 def db_settings_extra(tmp_path):
     """Fixture for a temporary database for extra tests."""
     db_file = tmp_path / "test_extra.db"
     return DatabaseSettings(name=str(db_file))
+
 
 def test_get_required_columns_no_primary_measure(db_settings_extra):
     """
@@ -24,7 +27,7 @@ def test_get_required_columns_no_primary_measure(db_settings_extra):
         dimensions=[Dimension(id="geo", name="Geo", position=0, data_type="String")],
         measures=[Measure(id="WRONG_ID", name="Some other measure")],
         primary_measure_id="OBS_VALUE",
-        attributes=[]
+        attributes=[],
     )
 
     columns = loader._get_required_columns(dsd_no_measure)
@@ -33,6 +36,7 @@ def test_get_required_columns_no_primary_measure(db_settings_extra):
     assert "OBS_VALUE" in columns
     assert columns["OBS_VALUE"] == "REAL"
     assert "geo" in columns
+
 
 def test_prepare_schema_rollback_on_error(db_settings_extra, sample_dsd):
     """
@@ -54,6 +58,9 @@ def test_prepare_schema_rollback_on_error(db_settings_extra, sample_dsd):
     cursor = conn.cursor()
     # The fqn will be 'main__invalid.table', which is not a valid identifier
     # We can check if any table was created with a name like 'main__invalid'
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'main__invalid%'")
+    cursor.execute(
+        "SELECT name FROM sqlite_master "
+        "WHERE type='table' AND name LIKE 'main__invalid%'"
+    )
     tables = cursor.fetchall()
     assert len(tables) == 0

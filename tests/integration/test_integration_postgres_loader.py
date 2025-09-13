@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 import pytest
 from psycopg.rows import dict_row
+from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 from testcontainers.postgres import PostgresContainer
 
 from py_load_eurostat.config import DatabaseSettings
@@ -26,15 +27,15 @@ from py_load_eurostat.models import (
 )
 
 
-from testcontainers.core.wait_strategies import LogMessageWaitStrategy
-
 @pytest.fixture(scope="module")
 def postgres_container():
     """
     Spins up a PostgreSQL container for the test module.
     """
     postgres = PostgresContainer("postgres:16-alpine")
-    postgres.waiting_for(LogMessageWaitStrategy("database system is ready to accept connections"))
+    postgres.waiting_for(
+        LogMessageWaitStrategy("database system is ready to accept connections")
+    )
     with postgres:
         yield postgres
 
@@ -258,13 +259,15 @@ def test_prepare_schema_is_idempotent_with_fks(
         # 4. Verify that the table and FKs still exist
         with loader.conn.cursor() as cur:
             cur.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_name = %s AND table_schema = %s",
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_name = %s AND table_schema = %s",
                 (table_name, data_schema),
             )
             assert cur.fetchone() is not None, "Table should still exist"
 
             cur.execute(
-                "SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = %s",
+                "SELECT 1 FROM information_schema.table_constraints "
+                "WHERE constraint_name = %s",
                 (f"fk_{table_name}_geo",),
             )
             assert cur.fetchone() is not None, "Foreign key should still exist"
