@@ -36,9 +36,9 @@ def db_settings(postgres_container: PostgresContainer) -> DatabaseSettings:
     return DatabaseSettings(
         host=postgres_container.get_container_host_ip(),
         port=postgres_container.get_exposed_port(5432),
-        user=postgres_container.username,
-        password=postgres_container.password,
-        name=postgres_container.dbname,
+        user=postgres_container.get_username(),
+        password=postgres_container.get_password(),
+        name=postgres_container.get_database_name(),
     )
 
 
