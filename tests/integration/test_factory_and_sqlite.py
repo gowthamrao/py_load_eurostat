@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from py_load_eurostat import pipeline
-from py_load_eurostat.config import AppSettings, DatabaseType
+from py_load_eurostat.config import AppSettings
 from py_load_eurostat.fetcher import Fetcher
 from py_load_eurostat.models import DSD, Attribute, Dimension, Measure
 
@@ -43,6 +43,7 @@ def correct_dsd_for_tps00001() -> DSD:
 )
 @pytest.mark.integration
 def test_full_pipeline_with_sqlite_via_factory(
+    monkeypatch,
     tmp_path,
     mocker,
     representation,
@@ -55,13 +56,8 @@ def test_full_pipeline_with_sqlite_via_factory(
     """
     # 1. Configure for SQLite
     db_file = tmp_path / "test_eurostat.db"
-    # Create a new settings object and manually override the db settings
-    # This bypasses environment variable loading for the db path to debug a
-    # Windows-specific OSError.
-    new_settings = AppSettings()
-    new_settings.db_type = DatabaseType.SQLITE
-    new_settings.db.name = str(db_file)
-    new_settings.cache.path = tmp_path / "test_cache"
+    monkeypatch.setenv("PY_LOAD_EUROSTAT_DB_TYPE", "sqlite")
+    monkeypatch.setenv("PY_LOAD_EUROSTAT_DB__NAME", str(db_file))
 
     # 2. Mock Fetcher and Parser
     dataset_id = "tps00001"
@@ -85,6 +81,7 @@ def test_full_pipeline_with_sqlite_via_factory(
     )
 
     # 3. Run the pipeline
+    new_settings = AppSettings()
     pipeline.run_pipeline(
         dataset_id=dataset_id,
         representation=representation,
