@@ -24,9 +24,13 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Set up Docker
+    - name: Set up Docker for macOS
       if: runner.os == 'macOS'
       uses: docker/setup-docker-action@v4
+
+    - name: Set Docker Host for Windows
+      if: runner.os == 'Windows'
+      run: echo "DOCKER_HOST=npipe:////./pipe/docker_engine" >> $env:GITHUB_ENV
 
     - name: Install PDM
       run: |
