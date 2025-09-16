@@ -45,6 +45,9 @@ jobs:
         docker pull postgres:16-alpine
         docker pull testcontainers/ryuk:0.8.1
 
+    - name: List Docker images
+      run: docker images
+
     - name: Run tests
       run: |
         pdm run pytest
