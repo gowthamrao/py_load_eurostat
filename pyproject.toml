@@ -47,7 +47,7 @@ Repository = "https://github.com/example/py_load_eurostat"
 dev = [
     "pytest",
     "pytest-cov",
-    "testcontainers==2.0.0",
+    "testcontainers",
     "ruff==0.13.0",
     "mypy",
     "pytest-mock",

@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 import pytest
 from psycopg.rows import dict_row
+from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 from testcontainers.postgres import PostgresContainer
 
 from py_load_eurostat.config import DatabaseSettings
@@ -31,7 +32,11 @@ def postgres_container():
     """
     Spins up a PostgreSQL container for the test module.
     """
-    with PostgresContainer("postgres:16-alpine") as postgres:
+    postgres = PostgresContainer("postgres:16-alpine")
+    postgres.waiting_for(
+        LogMessageWaitStrategy("database system is ready to accept connections")
+    )
+    with postgres:
         yield postgres
 
 
@@ -43,9 +48,9 @@ def db_settings(postgres_container: PostgresContainer) -> DatabaseSettings:
     return DatabaseSettings(
         host=postgres_container.get_container_host_ip(),
         port=postgres_container.get_exposed_port(5432),
-        user=postgres_container.get_username(),
-        password=postgres_container.get_password(),
-        name=postgres_container.get_database_name(),
+        user=postgres_container.username,
+        password=postgres_container.password,
+        name=postgres_container.dbname,
     )
 
 

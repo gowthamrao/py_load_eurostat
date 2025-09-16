@@ -43,7 +43,6 @@ def correct_dsd_for_tps00001() -> DSD:
 )
 @pytest.mark.integration
 def test_full_pipeline_with_sqlite_via_factory(
-    monkeypatch,
     tmp_path,
     mocker,
     representation,
