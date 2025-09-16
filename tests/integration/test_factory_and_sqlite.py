@@ -62,6 +62,7 @@ def test_full_pipeline_with_sqlite_via_factory(
     new_settings = AppSettings()
     new_settings.db_type = DatabaseType.SQLITE
     new_settings.db.name = str(db_file)
+    new_settings.cache.path = tmp_path / "test_cache"
 
     # 2. Mock Fetcher and Parser
     dataset_id = "tps00001"
