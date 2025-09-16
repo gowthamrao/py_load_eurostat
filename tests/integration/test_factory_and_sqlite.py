@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from py_load_eurostat import pipeline
-from py_load_eurostat.config import AppSettings
+from py_load_eurostat.config import AppSettings, DatabaseType
 from py_load_eurostat.fetcher import Fetcher
 from py_load_eurostat.models import DSD, Attribute, Dimension, Measure
 
@@ -60,7 +60,7 @@ def test_full_pipeline_with_sqlite_via_factory(
     # This bypasses environment variable loading for the db path to debug a
     # Windows-specific OSError.
     new_settings = AppSettings()
-    new_settings.db_type = "sqlite"
+    new_settings.db_type = DatabaseType.SQLITE
     new_settings.db.name = str(db_file)
 
     # 2. Mock Fetcher and Parser
