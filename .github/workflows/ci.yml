@@ -40,6 +40,11 @@ jobs:
       run: |
         pdm install -d
 
+    - name: Pull Docker images
+      run: |
+        docker pull postgres:16-alpine
+        docker pull testcontainers/ryuk:0.8.1
+
     - name: Run tests
       run: |
         pdm run pytest
