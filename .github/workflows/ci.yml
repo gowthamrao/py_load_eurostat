@@ -8,26 +8,12 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.10", "3.11", "3.12"]
-
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: testuser
-          POSTGRES_PASSWORD: testpassword
-          POSTGRES_DB: testdb
-        ports:
-          - 5432:5432
-        # needed because the postgres container does not provide a healthcheck
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    runs-on: ${{ matrix.os }}
 
     steps:
     - name: Checkout repository
@@ -48,11 +34,6 @@ jobs:
 
     - name: Run tests
       run: |
-        export PY_LOAD_EUROSTAT_DB__HOST=localhost
-        export PY_LOAD_EUROSTAT_DB__PORT=5432
-        export PY_LOAD_EUROSTAT_DB__USER=testuser
-        export PY_LOAD_EUROSTAT_DB__PASSWORD=testpassword
-        export PY_LOAD_EUROSTAT_DB__NAME=testdb
         pdm run pytest
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
