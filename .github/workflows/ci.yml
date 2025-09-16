@@ -64,6 +64,11 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    - name: Start Docker
+      run: |
+        open -a Docker --args --unattended
+        while ! docker system info >/dev/null 2>&1; do sleep 1; done
+
     - name: Start PostgreSQL
       run: docker compose up -d
 
