@@ -1,0 +1,158 @@
+name: Python CI/CD
+
+on: [push, pull_request]
+
+jobs:
+  lint:
+    # This job runs linters and static analysis.
+    # It runs on a single OS and Python version as the checks are source code based
+    # and not dependent on the execution environment. This is a common optimization.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PDM
+        run: |
+          pip install pdm
+
+      - name: Install dependencies
+        run: |
+          pdm install -d
+
+      - name: Run ruff
+        run: |
+          pdm run ruff check src tests
+
+      - name: Run mypy
+        run: |
+          pdm run mypy src tests
+
+  test-linux:
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        # Add a health check to ensure the service is ready
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install PDM
+        run: |
+          pip install pdm
+
+      - name: Install dependencies
+        run: |
+          pdm install -d
+
+      - name: Run all tests (including integration)
+        env:
+          PY_LOAD_EUROSTAT_DB__HOST: postgres
+          PY_LOAD_EUROSTAT_DB__PORT: 5432
+          PY_LOAD_EUROSTAT_DB__USER: testuser
+          PY_LOAD_EUROSTAT_DB__PASSWORD: testpassword
+          PY_LOAD_EUROSTAT_DB__NAME: testdb
+        run: |
+          pdm run pytest
+
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.12'
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: ./coverage.xml
+          fail_ci_if_error: true
+
+  test-other-os:
+    needs: lint
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install PDM
+        run: |
+          pip install pdm
+
+      - name: Install dependencies
+        run: |
+          pdm install -d
+
+      - name: Run tests (excluding integration)
+        run: |
+          pdm run pytest -m "not integration"
+
+  release:
+    # This job handles the Continuous Deployment (CD) part of the workflow.
+    # For a Python library, CD typically means building the package and publishing it
+    # to a package repository like PyPI. This job is triggered only when a new
+    name: Build and publish to PyPI
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test-linux, test-other-os]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PDM
+        run: |
+          pip install pdm
+
+      - name: Install dependencies
+        run: |
+          pdm install -d --prod
+
+      - name: Build package
+        run: |
+          pdm build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}

@@ -1,0 +1,29 @@
+# -----------------------------------------------------------------------------
+# Managed Datasets for py-load-eurostat
+# -----------------------------------------------------------------------------
+# This file contains a list of Eurostat dataset IDs that the 'update-all'
+# command will manage. The pipeline will check for updates for each of these
+# datasets and run the ingestion process only for those that have changed.
+#
+# You can find dataset IDs by browsing the Eurostat database website:
+# https://ec.europa.eu/eurostat/web/main/data/database
+#
+# To use this feature, copy this file to 'managed_datasets.yml' and
+# customize the list below.
+# -----------------------------------------------------------------------------
+
+datasets:
+  # Gross domestic product at market prices (main aggregates)
+  - nama_10_gdp
+
+  # Population on 1 January
+  - tps00001
+
+  # Unemployment rate - annual average
+  - tec00115
+
+  # Greenhouse gas emissions by source sector
+  - env_air_gge
+
+  # Example of a dataset that might be updated frequently
+  - ei_bsin_m_r2

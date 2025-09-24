@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+pip-wheel-metadata/
+.eggs/
+*.egg-info/
+*.egg
+dist/
+build/
+*.so
+.idea/
+.vscode/
+
+# Caches and artifacts
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+.coverage.*
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Eurostat Loader specific
+.cache/
+*.log

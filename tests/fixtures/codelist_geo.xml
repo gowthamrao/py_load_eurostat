@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<message:Structure xmlns:message="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/message" xmlns:structure="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/structure" xmlns:common="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/common">
+  <message:Header>
+    <message:ID>IDREF</message:ID>
+    <message:Test>true</message:Test>
+    <message:Prepared>2025-01-01T00:00:00Z</message:Prepared>
+    <message:Sender id="ESTAT"/>
+  </message:Header>
+  <message:Structures>
+    <structure:Codelists>
+      <structure:Codelist id="CL_GEO" version="1.0" agencyID="ESTAT">
+        <common:Name xml:lang="en">Geopolitical entities</common:Name>
+        <structure:Code id="EU27_2020">
+          <common:Name xml:lang="en">European Union - 27 countries (from 2020)</common:Name>
+        </structure:Code>
+        <structure:Code id="DE">
+          <common:Name xml:lang="en">Germany</common:Name>
+        </structure:Code>
+        <structure:Code id="FR">
+          <common:Name xml:lang="en">France</common:Name>
+        </structure:Code>
+      </structure:Codelist>
+    </structure:Codelists>
+  </message:Structures>
+</message:Structure>

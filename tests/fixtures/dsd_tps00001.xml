@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<message:Structure xmlns:message="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/message" xmlns:structure="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/structure" xmlns:common="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/common">
+  <message:Header>
+    <message:ID>IDREF</message:ID>
+    <message:Test>true</message:Test>
+    <message:Prepared>2025-01-01T00:00:00Z</message:Prepared>
+    <message:Sender id="ESTAT"/>
+  </message:Header>
+  <message:Structures>
+    <structure:Dataflows>
+      <structure:Dataflow id="TPS00001" version="1.0" agencyID="ESTAT">
+        <common:Name xml:lang="en">Test Dataset</common:Name>
+        <structure:Structure>
+          <Ref id="DSD_TPS00001" version="1.0" agencyID="ESTAT" package="datastructure" class="DataStructure"/>
+        </structure:Structure>
+      </structure:Dataflow>
+    </structure:Dataflows>
+    <structure:DataStructures>
+      <structure:DataStructureDefinition id="DSD_TPS00001" version="1.0" agencyID="ESTAT">
+        <common:Name xml:lang="en">Test DSD</common:Name>
+        <structure:DimensionList>
+          <structure:Dimension id="GEO" position="1">
+            <structure:Representation>
+              <Ref id="CL_GEO" version="1.0" agencyID="ESTAT" package="codelist" class="Codelist"/>
+            </structure:Representation>
+          </structure:Dimension>
+        </structure:DimensionList>
+        <structure:AttributeList>
+          <structure:Attribute id="OBS_FLAG" assignmentStatus="Mandatory">
+            <structure:Representation>
+              <Ref id="CL_OBS_FLAG" version="1.0" agencyID="ESTAT" package="codelist" class="Codelist"/>
+            </structure:Representation>
+          </structure:Attribute>
+        </structure:AttributeList>
+        <structure:MeasureList>
+          <structure:PrimaryMeasure id="OBS_VALUE">
+            <structure:Representation>
+              <TextFormat textType="Double"/>
+            </structure:Representation>
+          </structure:PrimaryMeasure>
+        </structure:MeasureList>
+      </structure:DataStructureDefinition>
+    </structure:DataStructures>
+  </message:Structures>
+</message:Structure>
