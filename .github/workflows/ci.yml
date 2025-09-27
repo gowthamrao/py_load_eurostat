@@ -1,0 +1,143 @@
+# ==============================================================================
+# Continuous Integration (CI) Workflow
+#
+# This workflow automates linting and testing for the project. It is designed
+# for fast feedback by running a quick lint job before a comprehensive,
+# parallelized test matrix.
+# ==============================================================================
+name: CI
+
+# ------------------------------------------------------------------------------
+# Workflow Triggers
+#
+# Runs on pushes and pull requests to the 'main' branch.
+# ------------------------------------------------------------------------------
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+# ------------------------------------------------------------------------------
+# Concurrency Control
+#
+# Ensures that only one workflow run is active for a given branch or PR,
+# cancelling any in-progress runs when a new one is triggered.
+# ------------------------------------------------------------------------------
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# ------------------------------------------------------------------------------
+# Jobs
+# ------------------------------------------------------------------------------
+jobs:
+  # ============================================================================
+  # Lint Job
+  #
+  # Performs static analysis to catch formatting, style, and type errors early.
+  # ============================================================================
+  lint:
+    name: Lint and Static Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # --- Security: Principle of Least Privilege ---
+    permissions:
+      contents: read
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@a4aa98b9e5e8e8ffcbf53ebb1c71a31651961436
+        with:
+          egress-policy: audit
+
+      - name: Check out repository
+        uses: actions/checkout@a5ac7e51b4109f5124f9564e9f363c4da762134f # v4.1.7
+
+      - name: Set up Python
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Run pre-commit hooks
+        uses: pre-commit/action@2c9f91f3d52366e9389994082531a78374a27364 # v3.0.1
+
+  # ============================================================================
+  # Test Job
+  #
+  # Runs the full test suite across a matrix of operating systems and Python
+  # versions. This job only runs if the 'lint' job succeeds.
+  # ============================================================================
+  test:
+    name: Test on ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    needs: [lint]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    # --- Security: Principle of Least Privilege ---
+    permissions:
+      contents: read
+
+    # --- Test Matrix Strategy ---
+    strategy:
+      fail-fast: false # Ensures all tests in the matrix run, even if one fails
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@a4aa98b9e5e8e8ffcbf53ebb1c71a31651961436
+        with:
+          egress-policy: audit
+
+      - name: Check out repository
+        uses: actions/checkout@a5ac7e51b4109f5124f9564e9f363c4da762134f # v4.1.7
+
+      - name: Install PDM
+        run: |
+          pip install pipx
+          pipx install pdm
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pdm"
+
+      - name: Install dependencies
+        run: pdm install -v --no-editable
+
+      - name: Run Unit Tests
+        run: pdm run pytest -m "not integration" --cov=src --cov-report=xml:coverage-unit.xml
+
+      - name: Run Integration Tests
+        run: pdm run pytest -m "integration" --cov=src --cov-append --cov-report=xml:coverage-integration.xml
+
+      - name: Upload Unit Test Coverage to Codecov
+        uses: codecov/codecov-action@e25207740263f90100778c1874fb6854b7c6c495 # v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage-unit.xml
+          flags: ${{ matrix.os }},py${{ matrix.python-version }},unit
+          name: codecov-unit-tests
+          fail_ci_if_error: true
+          verbose: true
+
+      - name: Upload Integration Test Coverage to Codecov
+        uses: codecov/codecov-action@e25207740263f90100778c1874fb6854b7c6c495 # v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage-integration.xml
+          flags: ${{ matrix.os }},py${{ matrix.python-version }},integration
+          name: codecov-integration-tests
+          fail_ci_if_error: true
+          verbose: true
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: ./**/logs/*.log
