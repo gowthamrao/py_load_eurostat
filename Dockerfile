@@ -1,65 +1,57 @@
-# ==============================================================================
-# Builder Stage
-#
-# This stage installs dependencies using PDM, creating a self-contained
-# virtual environment. This keeps the final image clean and minimal.
-# ==============================================================================
-ARG PYTHON_VERSION=3.12
-ARG BASE_IMAGE=python:${PYTHON_VERSION}-slim-bookworm
+# ---- Builder Stage: Exports production dependencies to requirements.txt ----
+FROM python:3.12-slim-bookworm AS builder
 
-FROM ${BASE_IMAGE} AS builder
+# Prevent Python from writing pyc files.
+ENV PYTHONDONTWRITEBYTECODE=1
+# Ensure Python output is sent straight to the terminal without buffering.
+ENV PYTHONUNBUFFERED=1
 
-# Set environment variables for non-interactive installs and to manage paths
-ENV PIP_NO_CACHE_DIR=off \
-    PIP_DISABLE_PIP_VERSION_CHECK=on \
-    PIP_DEFAULT_TIMEOUT=100 \
-    POETRY_VIRTUALENVS_IN_PROJECT=true \
-    PDM_USE_VENV=1 \
-    PATH="/app/.venv/bin:$PATH"
+# Install PDM for dependency management.
+RUN pip install --no-cache-dir pdm
 
-# Create a non-root user and group for security
-RUN groupadd --system --gid 1001 appgroup && \
-    useradd --system --uid 1001 --gid appgroup appuser
-
-# Create and set permissions for the application directory
+# Set the working directory.
 WORKDIR /app
-COPY --chown=appuser:appgroup . /app
 
-# Install PDM using pipx for a clean, isolated installation
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install pipx && \
-    pipx install pdm
+# Copy dependency definition files.
+COPY pyproject.toml pdm.lock ./
 
-# Install project dependencies into a virtual environment
-# The --prod flag ensures that dev dependencies are not installed.
-RUN --mount=type=cache,target=/root/.pdm_cache \
-    pdm install --prod --no-editable
+# Export production-only dependencies to a requirements.txt file.
+# This avoids installing PDM in the final image.
+RUN pdm export -o requirements.txt --prod --without-hashes
 
-# ==============================================================================
-# Final Stage
-#
-# This stage creates the final, lean production image. It copies the
-# virtual environment and source code from the builder stage and runs the
-# application as a non-root user.
-# ==============================================================================
-FROM ${BASE_IMAGE} AS final
 
-# Set environment variables for the final image
-ENV PATH="/app/.venv/bin:$PATH" \
-    PYTHONUNBUFFERED=1
+# ---- Final Stage: Creates the final, lean production image ----
+FROM python:3.12-slim-bookworm
 
-# Create the same non-root user and group as in the builder stage
-RUN groupadd --system --gid 1001 appgroup && \
-    useradd --system --uid 1001 --gid appgroup appuser
+# Prevent Python from writing pyc files.
+ENV PYTHONDONTWRITEBYTECODE=1
+# Ensure Python output is sent straight to the terminal without buffering.
+ENV PYTHONUNBUFFERED=1
 
-# Copy the virtual environment and source code from the builder stage
-WORKDIR /app
-COPY --from=builder --chown=appuser:appgroup /app/.venv /app/.venv
-COPY --from=builder --chown=appuser:appgroup /app/src /app/src
+# Create a non-root user to run the application.
+RUN useradd --create-home --shell /bin/bash appuser
 
-# Set the user to the non-root user
+# Set the working directory.
+WORKDIR /home/appuser
+
+# Copy the requirements.txt from the builder stage.
+COPY --from=builder /app/requirements.txt .
+
+# Install the production dependencies as the non-root user.
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# Copy the application source code and project definition.
+COPY --chown=appuser:appuser src/py_load_eurostat ./py_load_eurostat
+COPY --chown=appuser:appuser pyproject.toml .
+
+# Install the application itself. This will create the command-line entrypoint.
+RUN pip install --no-cache-dir --user .
+
+# Add the user's local bin directory to the PATH.
+ENV PATH="/home/appuser/.local/bin:${PATH}"
+
+# Switch to the non-root user.
 USER appuser
 
-# Define the entrypoint for the container
+# Set the default command to run when the container starts.
 ENTRYPOINT ["py-load-eurostat"]
-CMD ["--help"]

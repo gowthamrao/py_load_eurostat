@@ -1,102 +1,140 @@
-# CI/CD Strategy and Implementation
+# CI/CD Strategy and Architecture
 
 ## 1. Overview
 
-This document outlines the architecture, rationale, and implementation details of the continuous integration and continuous delivery (CI/CD) pipeline for this repository. The primary goals of this pipeline are to:
+The goal of this CI/CD pipeline is to establish a robust, secure, and efficient automated workflow for the `py_load_eurostat` project. The implementation focuses on best-in-class practices for Python development, including standardized dependency management, comprehensive static analysis, multi-platform testing, and container security scanning.
 
--   **Ensure Code Quality:** Automatically enforce coding standards, formatting, and type safety.
--   **Guarantee Stability:** Run a comprehensive test suite across multiple platforms and Python versions to prevent regressions.
--   **Enhance Security:** Automate security checks, including dependency and container vulnerability scanning.
--   **Improve Developer Velocity:** Provide fast feedback to developers and automate the build and verification process.
+This document outlines the technology choices, the architecture of the workflows, and the security measures that have been put in place.
 
 ## 2. Technology Stack and Rationale
 
-The CI/CD pipeline is built on a foundation of modern, industry-standard tools selected for their efficiency and robustness.
+### Dependency Management: PDM
 
--   **Dependency Management:** **PDM (Python Development Master)** was chosen as the definitive dependency manager. It is specified in `pyproject.toml` and provides a single, reliable source of truth for project dependencies, avoiding the ambiguity of multiple lock files or `requirements.txt` files.
--   **CI/CD Platform:** **GitHub Actions** is used as the automation platform due to its tight integration with the source code repository, extensive marketplace of actions, and robust support for matrix builds and caching.
--   **Linting and Formatting:** **Ruff** is used for both linting and formatting, offering exceptional speed and a comprehensive set of rules. **Mypy** is used for static type checking. These are managed and enforced via `pre-commit`.
--   **Testing Framework:** **Pytest** is the testing framework, chosen for its powerful features, extensive plugin ecosystem, and clear test organization capabilities.
--   **Containerization:** **Docker** is used to create portable, secure, and reproducible application environments.
--   **Security Scanning:** **Trivy** is integrated to scan Docker images for known vulnerabilities, providing a critical layer of security.
+- **Decision:** The project has been standardized on **PDM (Python Development Master)**.
+- **Rationale:** The repository already contained a `pdm.lock` file and `pyproject.toml` configured for PDM. To ensure a single source of truth and avoid dependency conflicts, PDM was chosen as the definitive tool. It is a modern, all-in-one tool that handles dependency resolution, virtual environment management, and packaging.
+
+### Linting and Formatting: Ruff and Mypy
+
+- **Decision:** Code quality is enforced using `ruff` and `mypy`, integrated via `pre-commit`.
+- **Rationale:**
+    - **Ruff** is an extremely fast linter and formatter that replaces multiple legacy tools (like Flake8, isort, and Black) with a single, high-performance binary.
+    - **Mypy** is the standard for static type checking in Python, ensuring type safety and reducing runtime errors.
+
+### Containerization: Docker
+
+- **Decision:** A multi-stage `Dockerfile` is used to create a production-ready container image.
+- **Rationale:** Docker provides a consistent, isolated environment for running the application. The multi-stage build strategy ensures the final image is minimal, containing only the application code and its production dependencies, which enhances security and reduces the image size.
+
+### Security Scanning: Trivy
+
+- **Decision:** The Docker image is scanned for vulnerabilities using **Trivy**.
+- **Rationale:** Trivy is a comprehensive and easy-to-use open-source scanner that detects vulnerabilities in OS packages and application dependencies. Integrating it into the CI pipeline ensures that security issues are caught automatically before they reach production.
 
 ## 3. Proactive Improvements Made
 
-Upon initial analysis, several gaps were identified and proactively addressed to establish a best-in-class CI/CD foundation.
+The initial repository was missing several critical CI/CD components. The following files and configurations were created to address these gaps:
 
--   **Standardized on PDM:** Confirmed PDM as the sole dependency manager, ensuring a single, unambiguous workflow for managing dependencies. No "cruft" from other managers like Poetry or Pipenv was present, but this strategy prevents it from appearing in the future.
--   **Added Comprehensive `pre-commit` Configuration:** Created a `.pre-commit-config.yaml` from scratch. This file now automatically enforces code formatting (`ruff format`), linting (`ruff`), and type checking (`mypy`), ensuring all code committed to the repository meets quality standards.
--   **Implemented a Secure and Efficient `Dockerfile`:** A new, multi-stage `Dockerfile` was created. It uses a builder pattern to keep the final image minimal, creates a non-root user for security, and is optimized for the PDM ecosystem.
--   **Created a `.dockerignore` File:** A comprehensive `.dockerignore` file was added to minimize the Docker build context. This speeds up image builds and prevents sensitive information (like `.env` files) or development artifacts (like `.pytest_cache`) from being included in the final image.
+1.  **`.pre-commit-config.yaml`:** A comprehensive pre-commit configuration was created to automate code quality checks. It includes hooks for:
+    - **Repository Hygiene:** Standard checks for file endings, YAML/TOML syntax, and merge conflicts.
+    - **Linting & Formatting:** `ruff` and `ruff-format` to enforce a consistent code style.
+    - **Type Checking:** `mypy` to enforce static type safety.
+
+2.  **`Dockerfile`:** A secure, multi-stage `Dockerfile` was added. Key features include:
+    - **Multi-Stage Build:** A builder stage installs PDM and exports a `requirements.txt` file, ensuring that PDM itself is not included in the final image.
+    - **Non-Root User:** The application runs as an unprivileged `appuser` to enhance security.
+    - **Lean Base Image:** Uses `python:3.12-slim-bookworm` for a smaller attack surface.
+
+3.  **`.dockerignore`:** A `.dockerignore` file was created to exclude `.git`, `.venv`, `__pycache__`, and other unnecessary files from the Docker build context, which improves build speed and security.
+
+4.  **GitHub Actions Workflows:** Two new workflow files were created in `.github/workflows/`.
 
 ## 4. Workflow Architecture
 
-The CI/CD pipeline is split into two distinct, parallel workflows:
+The CI/CD process is split into two parallel workflows: `ci.yml` and `docker.yml`.
 
 ### `ci.yml` (Linting and Testing)
 
-This workflow is designed for fast feedback. It consists of two jobs in a dependency chain:
+This workflow ensures code quality and correctness. It runs on `push` and `pull_request` events.
 
-1.  **`lint` Job:** This job runs first on an `ubuntu-latest` runner. It quickly checks out the code, sets up Python, and runs the entire `pre-commit` suite. If any formatting, linting, or type-checking errors are found, the job fails immediately, providing rapid feedback without wasting resources on running tests.
-2.  **`test` Job:** This job only runs if the `lint` job succeeds (`needs: [lint]`). It performs a comprehensive test run across a matrix of operating systems (`ubuntu-latest`, `macos-latest`, `windows-latest`) and Python versions (`3.10`, `3.11`, `3.12`), ensuring broad compatibility.
+- **Job 1: `lint`**
+    - **Purpose:** Provides fast feedback on code style and static analysis.
+    - **Process:** Runs on `ubuntu-latest` and executes all checks defined in `.pre-commit-config.yaml` using the `pre-commit/action`.
 
-### `docker.yml` (Container Build and Scan)
+- **Job 2: `test`**
+    - **Purpose:** Verifies that the application works correctly across different environments.
+    - **Dependency:** This job `needs: lint` and will only run if the linting job succeeds.
+    - **Matrix Strategy:** It runs on a matrix of:
+        - **Operating Systems:** `ubuntu-latest`, `macos-latest`, `windows-latest`
+        - **Python Versions:** `3.10`, `3.11`, `3.12`
+    - **Process:**
+        1.  Installs PDM and project dependencies using PDM's built-in caching.
+        2.  Runs unit tests (`tests/unit`) and integration tests (`tests/integration`) separately using `pytest`.
+        3.  Generates distinct coverage reports (`coverage-unit.xml`, `coverage-integration.xml`).
+        4.  Uploads coverage reports to Codecov with flags identifying the OS, Python version, and test type.
 
-This workflow runs in parallel to `ci.yml` and focuses exclusively on the containerization aspect of the project.
+### `docker.yml` (Build and Scan)
 
-1.  **`build-and-scan` Job:** This single job builds the Docker image defined in the `Dockerfile`. For pull requests, the image is built for verification but not pushed. It then uses Trivy to scan the locally-built image for `HIGH` or `CRITICAL` severity vulnerabilities, failing the build if any are found.
+This workflow ensures the container is buildable and secure. It also runs on `push` and `pull_request` events.
 
-## 5. Testing Strategy
+- **Job: `build_and_scan`**
+    - **Purpose:** To build a production-like Docker image and scan it for security vulnerabilities.
+    - **Process:**
+        1.  Authenticates with Docker Hub to avoid pull rate limits.
+        2.  Builds the Docker image using the `docker/build-push-action`. The image is loaded into the local daemon but **not pushed** to a registry.
+        3.  Uses the `aquasecurity/trivy-action` to scan the image for `HIGH` and `CRITICAL` vulnerabilities. The workflow will fail if any are found.
 
-The testing strategy is designed for clarity and comprehensiveness.
+## 5. Security Hardening
 
--   **Test Separation:** Tests are organized into `tests/unit` and `tests/integration` directories. In the CI workflow, they are executed as separate steps using `pytest` markers (`-m "not integration"` and `-m "integration"`).
--   **Matrix Builds:** The test suite is executed across a matrix of 3 operating systems and 3 Python versions, for a total of 9 distinct test environments. This ensures that platform-specific issues are caught before they are merged. The `fail-fast: false` strategy allows all jobs in the matrix to complete, providing a full picture of compatibility even if one combination fails.
--   **Code Coverage:** Code coverage is generated for both unit and integration test runs and uploaded to **Codecov** separately. Each report is tagged with the operating system, Python version, and test type (e.g., `ubuntu-latest-py3.12-unit`), allowing for detailed analysis of coverage across different environments.
+Security is a core component of this CI/CD strategy, implemented through several measures:
 
-## 6. Dependency Management and Caching
+- **Principle of Least Privilege (PoLP):** All workflow jobs are configured with `permissions: contents: read` to ensure they only have the minimum access required.
+- **Action Pinning:** All third-party GitHub Actions are pinned to their full commit SHA to prevent supply chain attacks from a compromised tag.
+- **Non-Root Docker Container:** The `Dockerfile` creates and runs the application as a non-root user (`appuser`).
+- **Vulnerability Scanning:** The `docker.yml` workflow automatically scans every image build with Trivy, failing the build if critical vulnerabilities are detected.
+- **Dependency Management:** Using a lock file (`pdm.lock`) ensures that dependency versions are pinned, providing reproducible builds.
 
--   **PDM Installation:** PDM is installed in the CI environment using `pipx`, which ensures it is available on the `PATH` in an isolated, reliable manner.
--   **Caching:** The `actions/setup-python` action is configured with `cache: "pdm"`. This leverages GitHub Actions' native caching mechanism to store installed dependencies, significantly speeding up subsequent workflow runs.
+## 6. How to Run Locally
 
-## 7. Security Hardening
+To ensure consistency between local development and the CI environment, developers should run the following checks before pushing code.
 
-Security is a core principle of this CI/CD pipeline, implemented through several layers:
+### Running Pre-Commit Checks
 
--   **Principle of Least Privilege (PoLP):** Workflows are configured with `permissions: contents: read`. The `docker.yml` workflow is granted the additional `security-events: write` permission, which is required for Trivy to upload scan results to GitHub's security dashboard.
--   **Action Pinning:** All third-party GitHub Actions are pinned to their full commit SHA. This prevents malicious or breaking changes from being introduced automatically and ensures workflow reproducibility.
--   **Non-Root Docker Container:** The `Dockerfile` creates a dedicated, unprivileged user (`appuser`) to run the application, reducing the attack surface.
--   **Vulnerability Scanning:** The `docker.yml` workflow integrates Trivy to scan for OS and library vulnerabilities, failing the build if `HIGH` or `CRITICAL` issues are detected.
--   **Docker Hub Authentication:** The workflow securely authenticates with Docker Hub using secrets. This is done conditionally, so forked repositories without the secrets do not fail. This prevents rate-limiting issues when pulling base images.
-
-## 8. Docker Strategy
-
--   **Multi-Stage Builds:** The `Dockerfile` uses a multi-stage build. A `builder` stage installs all dependencies using PDM. A clean `final` stage then copies only the application source code and the generated virtual environment, resulting in a minimal, production-ready image.
--   **Build Caching:** The `docker/build-push-action` is configured to use the GitHub Actions cache (`type=gha`), which significantly speeds up image builds by reusing layers from previous runs.
--   **Verification, Not Deployment:** On pull requests, the Docker image is built and scanned but is **not** pushed to a registry. This verifies that the `Dockerfile` is valid and the resulting image is secure without polluting the container registry.
-
-## 9. How to Run Locally
-
-Developers can replicate the CI checks locally to ensure their changes will pass before pushing.
-
--   **Linting:** To run the same checks as the `lint` job, install `pre-commit` and run it against all files:
+1.  **Install pre-commit:**
     ```bash
     pip install pre-commit
+    ```
+2.  **Install the git hooks:**
+    ```bash
     pre-commit install
+    ```
+3.  **Run all checks manually:**
+    ```bash
     pre-commit run --all-files
     ```
--   **Testing:** To run the test suite, install the dependencies with PDM and use `pytest`:
-    ```bash
-    # Install dependencies, including dev dependencies
-    pdm install
 
-    # Run unit tests
-    pdm run pytest -m "not integration"
+### Running Tests
 
-    # Run integration tests
-    pdm run pytest -m "integration"
-    ```
--   **Docker Build:** To build the Docker image locally, use the standard `docker build` command:
+1.  **Install PDM and dependencies:**
     ```bash
-    docker build -t py-load-eurostat:local .
+    pip install pdm
+    pdm install -d
     ```
+2.  **Run the test suite:**
+    ```bash
+    # Run all tests
+    pdm run pytest
+
+    # Run only unit tests
+    pdm run pytest tests/unit
+
+    # Run only integration tests
+    pdm run pytest tests/integration
+    ```
+
+### Building the Docker Image
+
+To build the Docker image locally, run the following command from the root of the repository:
+
+```bash
+docker build -t py-load-eurostat .
+```
