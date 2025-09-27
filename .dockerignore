@@ -1,0 +1,42 @@
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose.yml
+
+# Python caches and virtual environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv
+venv/
+env/
+
+# IDE and editor directories
+.vscode/
+.idea/
+
+# Local secrets
+.env
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Test-related caches
+.pytest_cache/
+.mypy_cache/
+
+# Documentation and other markdown files not needed in the image
+*.md
+NOTICE
+LICENSE
+TERMS.md
+
+# Config files not needed in the final image
+.pre-commit-config.yaml
+managed_datasets.yml.example
